@@ -1,0 +1,26 @@
+_target_: src.models.enhancer_module.EnhancerLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.components.my_network.FingerGAN
+  in_channels: 1
+  blk1_size: 64
+  blk2_size: 128
+  blk3_size: 256
+  blk4_size: 512
+  blk5_size: 1024
+
+# compile model for faster training with pytorch 2.0
+compile: false
