@@ -14,7 +14,7 @@ class EnhancerTrainDataModule(L.LightningDataModule):
         data_dir: str = "data/",
         lat_subdir: str = "/latents/",
         ref_subdir: str = '/references/',
-        gabor_subdir: str = '/gabor/',
+        skel_subdir: str = '/skel/',
         mask_subdir: str = '/masks/',
         apply_mask: int = 0,
         data_list: str = None,
@@ -41,7 +41,7 @@ class EnhancerTrainDataModule(L.LightningDataModule):
             [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
         )
 
-        self.gabor_transforms = transforms.Compose(
+        self.skel_transforms = transforms.Compose(
             [transforms.ToTensor()]
         )
 
@@ -58,11 +58,11 @@ class EnhancerTrainDataModule(L.LightningDataModule):
         if not self.data_train and not self.data_val:
             dataset = EnhancerTrainDataset(self.hparams.data_dir, 
                                                   transform=self.transforms, 
-                                                  gabor_transform=self.gabor_transforms, 
+                                                  skel_transform=self.skel_transforms, 
                                                   data_list=self.hparams.data_list, 
                                                   lat_subdir=self.hparams.lat_subdir, 
                                                   ref_subdir=self.hparams.ref_subdir, 
-                                                  gabor_subdir=self.hparams.gabor_subdir,
+                                                  skel_subdir=self.hparams.skel_subdir,
                                                   mask_subdir=self.hparams.mask_subdir,
                                                   apply_mask =self.hparams.apply_mask
                                                   )

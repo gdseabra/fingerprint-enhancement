@@ -1,7 +1,8 @@
 _target_: src.data.enhancer_predict_datamodule.EnhancerPredictionDataModule
-data_dir: ${paths.data_dir}/SD27/
-data_list: ref_list.txt
-img_subdir: /../lat_enh1/gabor/
-batch_size: 30 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+data_dir: /storage/gabriel/sd27_test/
+data_list: lat_list.txt
+img_subdir: /lat/
+batch_size: 32 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 num_workers: 18
 pin_memory: False
+

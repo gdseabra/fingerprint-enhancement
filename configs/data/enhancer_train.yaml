@@ -1,12 +1,12 @@
 _target_: src.data.enhancer_train_datamodule.EnhancerTrainDataModule
 data_dir: ${paths.data_dir}/
-data_list: img_list.txt
-lat_subdir: /synthetic/
-ref_subdir: /ref/
-gabor_subdir: /bin/
-mask_subdir: /ref_masks_aug/
-apply_mask: 1
-batch_size: 90 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+data_list: masks_ref_list.txt
+lat_subdir: /lat_synthetic/imgs/
+ref_subdir: /ref_orig/
+skel_subdir: /ref_skel/
+mask_subdir: /masks_synthetic_bg/
+apply_mask: 0
+batch_size: 64 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 train_val_split: [0.7, 0.3]
 num_workers: 9
 pin_memory: False

@@ -8,7 +8,7 @@ from torchvision.transforms import transforms
 from data.components.enhancer_predict_dataset import EnhancerPredictionDataset
 
 
-class PredictionDataModule(L.LightningDataModule):
+class EnhancerPredictionDataModule(L.LightningDataModule):
     def __init__(
         self,
         data_dir: str = "data/",
@@ -34,7 +34,7 @@ class PredictionDataModule(L.LightningDataModule):
             [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
         )
 
-        self.gabor_transforms = transforms.Compose(
+        self.skel_transforms = transforms.Compose(
             [transforms.ToTensor()]
         )
 

@@ -73,8 +73,7 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)
     
-    os.makedirs(cfg.model.output_path + '/bin/', exist_ok=True)
-    os.makedirs(cfg.model.output_path + '/gabor/', exist_ok=True)
+    os.makedirs(cfg.model.output_path + '/skel/', exist_ok=True)
 
 
 

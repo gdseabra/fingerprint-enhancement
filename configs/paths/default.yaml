@@ -4,7 +4,7 @@
 root_dir: ${oc.env:PROJECT_ROOT}
 
 # path to data directory
-data_dir: /data_lids/home/gabrielseabra/dummy_dataset/
+data_dir: /storage/gabriel/basen_train/
 
 # path to logging directory
 log_dir: ${paths.root_dir}/logs/

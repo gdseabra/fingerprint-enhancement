@@ -3,7 +3,9 @@ from typing import Any, Dict, Tuple
 import torch
 import torch.nn as nn
 from lightning import LightningModule
-from torchmetrics import MaxMetric, MeanMetric
+from torchmetrics import MaxMetric, MeanMetric, MinMetric
+import numpy as np
+from PIL import Image
 # from torchmetrics.classification.accuracy import Accuracy
 
 
@@ -54,6 +56,8 @@ class EnhancerLitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
+        output_path: str = None
+
     ) -> None:
         """Initialize a `EnhancerLitModule`.
 
@@ -83,7 +87,9 @@ class EnhancerLitModule(LightningModule):
         self.test_loss = MeanMetric()
 
         # for tracking best so far validation loss
-        self.val_loss_best = MaxMetric()
+        self.val_loss_best = MinMetric()
+
+        self.output_path = output_path
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -114,8 +120,11 @@ class EnhancerLitModule(LightningModule):
             - A tensor of target labels.
         """
         x, y = batch
-        yhat = self.forward(x)
-        loss = self.criterion(yhat, y)
+        yhat = self.forward(x)[:,0,:,:]
+
+        y_skel = y[:,1,:,:]
+
+        loss = self.criterion(yhat, y_skel,  torch.ones_like(yhat))
         
         return loss
 
@@ -161,7 +170,7 @@ class EnhancerLitModule(LightningModule):
         self.val_loss_best(loss)  # update best so far val acc
         # log `val_loss_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
-        self.log("val/loss_best", self.val_lost_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/loss_best", self.val_loss_best.compute(), sync_dist=True, prog_bar=True)
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
@@ -235,26 +244,39 @@ class EnhancerLitModule(LightningModule):
         names = batch[1]
         x, y = batch
         yhat = self.forward(x)
+
+        for i, name in enumerate(names):
+            skel = yhat[i, 0, :, :]
+
+            skel = skel.cpu().numpy()
+
+
+            skel = (255 * (skel - np.min(skel))/(np.max(skel) - np.min(skel))).astype('uint8')
+
+            skel = Image.fromarray(skel)
+            skel.save(self.output_path + '/skel/' + name + '.png')
+
         
         
         # return yhat
-        for i, name in enumerate(names):
-            gabor = yhat[i, 1, :, :]
-            bin   = torch.nn.functional.sigmoid(gabor)
-            bin   = torch.round(bin)
+        # for i, name in enumerate(names):
+        #     gabor = yhat[i, 1, :, :]
+        #     bin   = torch.nn.functional.sigmoid(gabor)
+        #     bin   = torch.round(bin)
 
-            gabor = gabor.cpu().numpy()
-            bin   = bin.cpu().numpy()
+        #     gabor = gabor.cpu().numpy()
+        #     bin   = bin.cpu().numpy()
 
 
-            gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
-            bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
+        #     gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
+        #     bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
 
-            gabor = Image.fromarray(gabor)
-            gabor.save(self.output_path + '/gabor/' + name + '.png')
+        #     gabor = Image.fromarray(gabor)
+        #     gabor.save(self.output_path + '/gabor/' + name + '.png')
 
-            bin = Image.fromarray(bin)
-            bin.save(self.output_path + '/bin/' + name + '.png')
+        #     bin = Image.fromarray(bin)
+        #     bin.save(self.output_path + '/bin/' + name + '.png')
+
 
 
 if __name__ == "__main__":

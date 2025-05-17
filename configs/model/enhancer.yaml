@@ -15,12 +15,12 @@ scheduler:
 
 net:
   _target_: src.models.components.my_network.FingerGAN
-  in_channels: 1
-  blk1_size: 64
-  blk2_size: 128
-  blk3_size: 256
-  blk4_size: 512
-  blk5_size: 1024
+  in_ch: 1
+  chs: [64, 128, 256, 512, 1024]
+  ndim: 2
+  out_ch: 1
 
 # compile model for faster training with pytorch 2.0
 compile: false
+
+output_path: /home/gabriel/fingerprint-enhancement/output/

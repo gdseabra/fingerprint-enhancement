@@ -7,7 +7,7 @@ defaults:
   - data: enhancer_train # choose datamodule with `train_dataloader()`
   - model: enhancer
   - callbacks: default
-  - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - logger: mlflow # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default
   - paths: default
   - extras: default
@@ -40,7 +40,7 @@ train: True
 
 # evaluate on test set, using best model weights achieved during training
 # lightning chooses best weights based on the metric specified in checkpoint callback
-test: True
+test: False
 
 # simply provide checkpoint path to resume training
 ckpt_path: null
