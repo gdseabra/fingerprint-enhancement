@@ -1,7 +1,7 @@
 _target_: src.data.enhancer_train_datamodule.EnhancerTrainDataModule
 data_dir: ${paths.data_dir}/
 data_list: masks_ref_list.txt
-lat_subdir: /lat_synthetic/imgs/
+lat_subdir: /lat_synthetic_documents/
 ref_subdir: /ref_orig/
 skel_subdir: /ref_skel/
 mask_subdir: /masks_synthetic_bg/
