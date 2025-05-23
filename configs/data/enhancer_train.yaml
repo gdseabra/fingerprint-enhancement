@@ -5,8 +5,9 @@ lat_subdir: /lat_synthetic_documents/
 ref_subdir: /ref_orig/
 skel_subdir: /ref_skel/
 mask_subdir: /masks_synthetic_bg/
+mnt_map_subdir: /ref_mnt_map/
 apply_mask: 0
-batch_size: 64 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+batch_size: 32 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 train_val_split: [0.7, 0.3]
-num_workers: 9
+num_workers: 8
 pin_memory: False

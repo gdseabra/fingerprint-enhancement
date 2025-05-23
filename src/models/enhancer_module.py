@@ -9,14 +9,36 @@ from PIL import Image
 # from torchmetrics.classification.accuracy import Accuracy
 
 
+def bce_loss(pred, target, mask_label, mnt_label):
+    bce_criterion = nn.functional.l1_loss
+    image_loss = bce_criterion(pred, target, reduction = 'none')
+
+    minutia_weighted_map = mnt_label
+    image_loss *= minutia_weighted_map
+    # image_loss = image_loss * mask_label
+    # return torch.sum(image_loss) / (torch.sum(mask_label).clamp(min=1) + 1e-7)
+
+    return torch.mean(torch.sum(image_loss, dim=(1,2)))
+
+class MyCriterion(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input, target, pixel_weight, mask):
+        enh_loss = bce_loss(input, target, pixel_weight, mask)
+
+        return enh_loss
+
 class MyWeightedL1Loss(nn.L1Loss):
     def __init__(self, reduction='none'):
         super(MyWeightedL1Loss, self).__init__(reduction=reduction)
 
     def forward(self, input, target, pixel_weight):
-        pixel_mse = super(MyWeightedL1Loss, self).forward(input, target)
-        loss = pixel_mse * pixel_weight
-        return loss.sum()/(loss.size(0))
+        pixel_mae = super(MyWeightedL1Loss, self).forward(input, target)
+        loss = pixel_mae * pixel_weight
+        return loss.sum()/(loss.size(0)) # mean per-image loss (not per-pixel or per-batch).
+
+
 
 class EnhancerLitModule(LightningModule):
     """
@@ -76,6 +98,7 @@ class EnhancerLitModule(LightningModule):
         # loss function
         self.criterion = MyWeightedL1Loss()
 
+
         # metric objects for calculating and averaging accuracy across batches
         # self.train_acc = Accuracy(task="multiclass", num_classes=10)
         # self.val_acc = Accuracy(task="multiclass", num_classes=10)
@@ -123,8 +146,30 @@ class EnhancerLitModule(LightningModule):
         yhat = self.forward(x)[:,0,:,:]
 
         y_skel = y[:,1,:,:]
+        mask = y[:,2,:,:]
+        mnt_map = y[:,3,:,:]
 
-        loss = self.criterion(yhat, y_skel,  torch.ones_like(yhat))
+
+        loss = self.criterion(yhat, y_skel,  mnt_map)
+
+        # loss = self.mse_criterion(yhat, y_skel,  torch.ones_like(y_skel))
+
+        data  = batch[0]
+        names = batch[1]
+        x, y = batch
+        yhat = self.forward(x)
+
+        # for i, name in enumerate(names):
+        #     mnt = mnt_map[i, :, :]
+
+        #     mnt = mnt.cpu().numpy()
+
+
+        #     mnt = (255 * (mnt - np.min(mnt))/(np.max(mnt) - np.min(mnt))).astype('uint8')
+
+        #     mnt = Image.fromarray(mnt)
+        #     # print(name)
+        #     mnt.save(self.output_path + '/mnt/' + str(i) + '.png')
         
         return loss
 
