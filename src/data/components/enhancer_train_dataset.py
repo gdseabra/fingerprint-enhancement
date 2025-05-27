@@ -75,7 +75,7 @@ class EnhancerTrainDataset(Dataset):
             mask  = self.skel_transform(mask)
             mnt_map = self.skel_transform(mnt_map)
         
-        ref_white = 0
+        ref_white = ref.max()
         gab_white = 0
 
         

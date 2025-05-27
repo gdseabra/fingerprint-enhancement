@@ -15,4 +15,5 @@ task_name: "predict"
 tags: ["dev"]
 
 # passing checkpoint path is necessary for evaluation
-ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-05-18_04-36-05/checkpoints/last.ckpt
+# ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-05-18_04-36-05/checkpoints/last.ckpt
+ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-05-23_16-17-27/checkpoints/last.ckpt

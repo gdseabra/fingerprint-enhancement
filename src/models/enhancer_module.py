@@ -145,6 +145,7 @@ class EnhancerLitModule(LightningModule):
         x, y = batch
         yhat = self.forward(x)[:,0,:,:]
 
+        y_orig = y[:,0,:,:]
         y_skel = y[:,1,:,:]
         mask = y[:,2,:,:]
         mnt_map = y[:,3,:,:]
