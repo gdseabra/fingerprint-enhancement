@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 # from thop import clever_format, profile
-# from torchsummary import summary
+from torchsummary import summary
 
 def autopad(k, p=None, d=1):  
     '''
@@ -137,12 +137,12 @@ class TinyUNet(nn.Module):
 
 
 if __name__ == '__main__':
-    model         = TinyUNet(in_channels=3, num_classes=2)
+    model         = TinyUNet(in_ch=3)
 
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)
 
-    # summary(model, (3, 256, 256))
+    summary(model, (3, 256, 256))
         
     # dummy_input   = torch.randn(1, 3, 256, 256).to(device)
     # flops, params = profile(model, (dummy_input, ), verbose=False)
