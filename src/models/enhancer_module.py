@@ -8,6 +8,8 @@ import numpy as np
 from PIL import Image
 # from torchmetrics.classification.accuracy import Accuracy
 
+import torch.nn.functional as F
+
 
 def bce_loss(pred, target, mask_label, mnt_label):
     bce_criterion = nn.functional.l1_loss
@@ -151,7 +153,7 @@ class EnhancerLitModule(LightningModule):
         mnt_map = y[:,3,:,:]
 
 
-        loss = self.criterion(yhat, y_skel,  mnt_map)
+        loss = self.criterion(yhat, y_orig,  torch.ones_like(yhat))
 
         # loss = self.mse_criterion(yhat, y_skel,  torch.ones_like(y_skel))
 

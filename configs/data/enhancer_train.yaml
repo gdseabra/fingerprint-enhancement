@@ -2,9 +2,11 @@ _target_: src.data.enhancer_train_datamodule.EnhancerTrainDataModule
 data_dir: ${paths.data_dir}/
 data_list: masks_ref_list.txt
 lat_subdir: /lat_synthetic_documents/
+# lat_subdir: /ref_orig/
 ref_subdir: /ref_orig/
 skel_subdir: /ref_skel/
 mask_subdir: /masks_synthetic_bg/
+# mask_subdir: /masks_orig/
 mnt_map_subdir: /ref_mnt_map/
 apply_mask: 0
 batch_size: 32 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)

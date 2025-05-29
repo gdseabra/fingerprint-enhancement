@@ -14,9 +14,8 @@ scheduler:
   patience: 2
 
 net:
-  _target_: src.models.components.ResUNet.ResUNet
+  _target_: src.models.components.TinyUNet.TinyUNet
   in_ch: 1
-  chs: [64, 128, 256, 512, 1024]
   ndim: 2
   out_ch: 1
 
