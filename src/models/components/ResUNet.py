@@ -4,6 +4,8 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 from torch import nn
+from thop import clever_format, profile
+from torchsummary import summary
 
 def conv_nd(
     in_channels: int, out_channels: int, kernel_size: int, ndim: int, **kwargs: Any
@@ -365,3 +367,22 @@ class ResUNet(nn.Module):
         z = self.head(z)
         z = z + x
         return z
+
+
+if __name__ == '__main__':
+    model         = ResUNet(in_ch=3)
+
+    device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model         = model.to(device)
+
+    summary(model, (3, 512, 512))
+        
+    dummy_input   = torch.randn(1, 3, 512, 512).to(device)
+    flops, params = profile(model, (dummy_input, ), verbose=False)
+    #-------------------------------------------------------------------------------#
+    #   flops * 2 because profile does not consider convolution as two operations.
+    #-------------------------------------------------------------------------------#
+    flops         = flops * 2
+    flops, params = clever_format([flops, params], "%.4f")
+    print(f'Total GFLOPs: {flops}')
+    print(f'Total Params: {params}')

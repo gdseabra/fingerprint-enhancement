@@ -8,10 +8,10 @@ from torchvision.transforms import transforms
 
 
 class EnhancerTrainDataset(Dataset):
-    def __init__(self, data_dir: str = "data/", data_list: str = None, transform=None, patch_size=None, lat_subdir = '/latents/', ref_subdir = '/references/', skel_subdir = '/skel/', mask_subdir = '/masks/', mnt_map_subdir='mnt_map', apply_mask = 0):
+    def __init__(self, data_dir: str = "data/", data_list: str = None, transform=None, skel_transform=None, patch_size=None, lat_subdir = '/latents/', ref_subdir = '/references/', skel_subdir = '/skel/', mask_subdir = '/masks/', mnt_map_subdir='mnt_map', apply_mask = 0):
         self.data_dir        = data_dir
         self.transform       = transform
-        # self.skel_transform = skel_transform
+        self.skel_transform = skel_transform
         self.data_list       = data_dir + data_list if data_list is not None else data_dir + "/data_list.txt"
 
         with open(self.data_list) as fp:
@@ -24,8 +24,7 @@ class EnhancerTrainDataset(Dataset):
         self.skel_suffix = "." + os.listdir(data_dir + skel_subdir)[0].split(".")[-1]
         self.mnt_map_suffix = "." + os.listdir(data_dir + mnt_map_subdir)[0].split(".")[-1]
         self.mask_suffix  = "." + os.listdir(data_dir + mask_subdir)[0].split(".")[-1]
-
-
+        
         self.lat_subdir   = lat_subdir
         self.ref_subdir   = ref_subdir
         self.skel_subdir = skel_subdir
@@ -40,7 +39,7 @@ class EnhancerTrainDataset(Dataset):
 
     def __getitem__(self, ix):
         lat   = Image.open(self.data_dir+self.lat_subdir+self.data[ix]+self.lat_suffix)
-        # mask  = Image.open(self.data_dir + self.mask_subdir  + self.data[ix] + self.mask_suffix)
+        mask  = Image.open(self.data_dir + self.mask_subdir  + self.data[ix] + self.mask_suffix)
 
         try:
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.data[ix] + self.ref_suffix)
@@ -74,11 +73,13 @@ class EnhancerTrainDataset(Dataset):
 
         # if self.skel_transform:
             # skel = self.skel_transform(skel)
-            # mask  = self.skel_transform(mask)
+        mask  = self.skel_transform(mask)
             # mnt_map = self.skel_transform(mnt_map)
 
+        ref_white = ref.max()
+        # gab_white = 0
         
-        # ref   = torch.where(mask == 0, ref_white, ref)
+        ref   = torch.where(mask == 0, ref_white, ref)
         # skel = torch.where(mask == 0, gab_white, skel)
 
         return lat, torch.concat([ref, ref], axis=0)

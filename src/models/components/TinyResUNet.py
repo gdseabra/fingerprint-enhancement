@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-# from thop import clever_format, profile
+from thop import clever_format, profile
 from torchsummary import summary
 
 def autopad(k, p=None, d=1):  
@@ -163,14 +163,14 @@ if __name__ == '__main__':
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)
 
-    summary(model, (3, 256, 256))
+    summary(model, (3, 512, 512))
         
-    # dummy_input   = torch.randn(1, 3, 256, 256).to(device)
-    # flops, params = profile(model, (dummy_input, ), verbose=False)
-    # #-------------------------------------------------------------------------------#
-    # #   flops * 2 because profile does not consider convolution as two operations.
-    # #-------------------------------------------------------------------------------#
-    # flops         = flops * 2
-    # flops, params = clever_format([flops, params], "%.4f")
-    # print(f'Total GFLOPs: {flops}')
-    # print(f'Total Params: {params}')
+    dummy_input   = torch.randn(1, 3, 512, 512).to(device)
+    flops, params = profile(model, (dummy_input, ), verbose=False)
+    #-------------------------------------------------------------------------------#
+    #   flops * 2 because profile does not consider convolution as two operations.
+    #-------------------------------------------------------------------------------#
+    flops         = flops * 2
+    flops, params = clever_format([flops, params], "%.4f")
+    print(f'Total GFLOPs: {flops}')
+    print(f'Total Params: {params}')
