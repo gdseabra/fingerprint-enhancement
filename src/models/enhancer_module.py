@@ -35,9 +35,9 @@ class MyWeightedL1Loss(nn.L1Loss):
     def __init__(self, reduction='none'):
         super(MyWeightedL1Loss, self).__init__(reduction=reduction)
 
-    def forward(self, input, target, pixel_weight):
+    def forward(self, input, target):
         pixel_mae = super(MyWeightedL1Loss, self).forward(input, target)
-        loss = pixel_mae * pixel_weight
+        loss = pixel_mae
         return loss.sum()/(loss.size(0)) # mean per-image loss (not per-pixel or per-batch).
 
 
@@ -148,12 +148,12 @@ class EnhancerLitModule(LightningModule):
         yhat = self.forward(x)[:,0,:,:]
 
         y_orig = y[:,0,:,:]
-        y_skel = y[:,1,:,:]
-        mask = y[:,2,:,:]
-        mnt_map = y[:,3,:,:]
+        # y_skel = y[:,1,:,:]
+        # mask = y[:,2,:,:]
+        # mnt_map = y[:,3,:,:]
 
 
-        loss = self.criterion(yhat, y_orig,  torch.ones_like(yhat))
+        loss = self.criterion(yhat, y_orig)
 
         # loss = self.mse_criterion(yhat, y_skel,  torch.ones_like(y_skel))
 

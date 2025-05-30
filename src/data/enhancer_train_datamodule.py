@@ -59,7 +59,6 @@ class EnhancerTrainDataModule(L.LightningDataModule):
         if not self.data_train and not self.data_val:
             dataset = EnhancerTrainDataset(self.hparams.data_dir, 
                                                   transform=self.transforms, 
-                                                  skel_transform=self.skel_transforms, 
                                                   data_list=self.hparams.data_list, 
                                                   lat_subdir=self.hparams.lat_subdir, 
                                                   ref_subdir=self.hparams.ref_subdir, 
