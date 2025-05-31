@@ -100,6 +100,10 @@ class EnhancerLitModule(LightningModule):
         # loss function
         self.criterion = MyWeightedL1Loss()
 
+        self.mse_criterion = torch.nn.functional.mse_loss
+        self.bce_criterion = torch.nn.functional.binary_cross_entropy_with_logits
+
+
 
         # metric objects for calculating and averaging accuracy across batches
         # self.train_acc = Accuracy(task="multiclass", num_classes=10)
@@ -147,13 +151,18 @@ class EnhancerLitModule(LightningModule):
         x, y = batch
         yhat = self.forward(x)[:,0,:,:]
 
+
         y_orig = y[:,0,:,:]
+        y_bin = y[:,1,:,:]
         # y_skel = y[:,1,:,:]
         # mask = y[:,2,:,:]
         # mnt_map = y[:,3,:,:]
 
 
-        loss = self.criterion(yhat, y_orig)
+        loss = self.criterion(yhat, y_bin)
+
+        loss  = 0.5 * self.mse_criterion(orig, orig_label) + 0.5 * self.bce_criterion(gabor, gabor_label)
+
 
         # loss = self.mse_criterion(yhat, y_skel,  torch.ones_like(y_skel))
 
@@ -302,7 +311,7 @@ class EnhancerLitModule(LightningModule):
             skel = (255 * (skel - np.min(skel))/(np.max(skel) - np.min(skel))).astype('uint8')
 
             skel = Image.fromarray(skel)
-            skel.save(self.output_path + '/skel/' + name + '.png')
+            skel.save(self.output_path + '/bin/' + name + '.png')
 
         
         

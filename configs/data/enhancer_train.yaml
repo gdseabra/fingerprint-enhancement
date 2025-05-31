@@ -13,4 +13,4 @@ apply_mask: 1
 batch_size: 112 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 train_val_split: [0.7, 0.3]
 num_workers: 8
-pin_memory: False
+pin_memory: True
