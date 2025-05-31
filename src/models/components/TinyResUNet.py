@@ -102,7 +102,7 @@ class UNetDecoder(nn.Module):
         self.cmrf     = CMRF(in_channels, out_channels)
         self.upsample = F.interpolate
 
-        # Residual projection for decoder (in_channels can differ from out_channels)
+        # Residual projection for decoder 
         self.res_proj = nn.Identity()
         if in_channels != out_channels:
             self.res_proj = nn.Sequential(
