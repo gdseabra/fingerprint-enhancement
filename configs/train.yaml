@@ -43,7 +43,7 @@ train: True
 test: False
 
 # simply provide checkpoint path to resume training
-# ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-05-18_04-36-05/checkpoints/last.ckpt
+# ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-06-01_00-40-03/checkpoints/epoch_035.ckpt
 
 # seed for random number generators in pytorch, numpy and python.random
 seed: null

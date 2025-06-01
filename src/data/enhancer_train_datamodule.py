@@ -16,6 +16,7 @@ class EnhancerTrainDataModule(L.LightningDataModule):
         ref_subdir: str = '/references/',
         skel_subdir: str = '/skel/',
         mask_subdir: str = '/masks/',
+        bin_subdir: str = '/bin/',
         mnt_map_subdir: str = '/mnt_map/',
         apply_mask: int = 0,
         data_list: str = None,
@@ -64,6 +65,7 @@ class EnhancerTrainDataModule(L.LightningDataModule):
                                                   lat_subdir=self.hparams.lat_subdir, 
                                                   ref_subdir=self.hparams.ref_subdir, 
                                                   skel_subdir=self.hparams.skel_subdir,
+                                                  bin_subdir=self.hparams.bin_subdir,
                                                   mask_subdir=self.hparams.mask_subdir,
                                                   mnt_map_subdir=self.hparams.mnt_map_subdir,
                                                   apply_mask =self.hparams.apply_mask
