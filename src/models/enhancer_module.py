@@ -2,12 +2,34 @@ from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn as nn
+from torch import Tensor
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric, MinMetric
 import numpy as np
 from PIL import Image
 # from torchmetrics.classification.accuracy import Accuracy
 
+import torch.nn.functional as F
+
+def dice_coeff(input: Tensor, target: Tensor, reduce_batch_first: bool = False, epsilon: float = 1e-6):
+    # Average of Dice coefficient for all batches, or for a single mask
+    assert input.size() == target.size()
+    assert input.dim() == 3 or not reduce_batch_first
+
+    sum_dim = (-1, -2) if input.dim() == 2 or not reduce_batch_first else (-1, -2, -3)
+
+    inter = 2 * (input * target).sum(dim=sum_dim)
+    sets_sum = input.sum(dim=sum_dim) + target.sum(dim=sum_dim)
+    # sets_sum = torch.where(sets_sum == 0, inter, sets_sum)
+
+    dice = (inter + epsilon) / (sets_sum + epsilon)
+    return dice.mean()
+
+
+def dice_loss(input: Tensor, target: Tensor, multiclass: bool = False):
+    # Dice loss (objective to minimize) between 0 and 1
+    fn = dice_coeff
+    return 1 - fn(input, target, reduce_batch_first=True)
 
 def bce_loss(pred, target, mask_label, mnt_label):
     bce_criterion = nn.functional.l1_loss
@@ -33,9 +55,9 @@ class MyWeightedL1Loss(nn.L1Loss):
     def __init__(self, reduction='none'):
         super(MyWeightedL1Loss, self).__init__(reduction=reduction)
 
-    def forward(self, input, target, pixel_weight):
+    def forward(self, input, target):
         pixel_mae = super(MyWeightedL1Loss, self).forward(input, target)
-        loss = pixel_mae * pixel_weight
+        loss = pixel_mae
         return loss.sum()/(loss.size(0)) # mean per-image loss (not per-pixel or per-batch).
 
 
@@ -96,7 +118,11 @@ class EnhancerLitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = MyWeightedL1Loss()
+        self.criterion = nn.BCEWithLogitsLoss()
+
+        self.mse_criterion = torch.nn.functional.mse_loss
+        self.bce_criterion = torch.nn.functional.binary_cross_entropy_with_logits
+
 
 
         # metric objects for calculating and averaging accuracy across batches
@@ -143,21 +169,31 @@ class EnhancerLitModule(LightningModule):
             - A tensor of target labels.
         """
         x, y = batch
-        yhat = self.forward(x)[:,0,:,:]
+        yhat = self.forward(x)
 
-        y_skel = y[:,1,:,:]
-        mask = y[:,2,:,:]
-        mnt_map = y[:,3,:,:]
+        # pred_orig  = yhat[:,0,:,:]
+        pred_bin = yhat[:,0,:,:]
 
 
-        loss = self.criterion(yhat, y_skel,  mnt_map)
+        # true_orig = y[:,0,:,:]
+        true_bin = y[:,1,:,:]
+        # y_skel = y[:,1,:,:]
+        # mask = y[:,2,:,:]
+        # mnt_map = y[:,3,:,:]
 
+
+        # loss = self.criterion(yhat, y_bin)
+
+        # print(f"yhat shape: {yhat.shape}, y_orig shape: {y_orig.shape}, y_bin shape: {y_bin.shape}")
+
+        # loss  = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
+
+        loss = (self.criterion(pred_bin, true_bin) + dice_loss(F.sigmoid(pred_bin), true_bin, multiclass=False))
+        # loss += 0.5 * self.mse_criterion(pred_orig, true_orig)
         # loss = self.mse_criterion(yhat, y_skel,  torch.ones_like(y_skel))
 
         data  = batch[0]
         names = batch[1]
-        x, y = batch
-        yhat = self.forward(x)
 
         # for i, name in enumerate(names):
         #     mnt = mnt_map[i, :, :]
@@ -290,37 +326,39 @@ class EnhancerLitModule(LightningModule):
         x, y = batch
         yhat = self.forward(x)
 
-        for i, name in enumerate(names):
-            skel = yhat[i, 0, :, :]
+        # for i, name in enumerate(names):
+        #     skel = yhat[i, 1, :, :]
 
-            skel = skel.cpu().numpy()
+        #     skel = skel.cpu().numpy()
 
 
-            skel = (255 * (skel - np.min(skel))/(np.max(skel) - np.min(skel))).astype('uint8')
+        #     skel = (255 * (skel - np.min(skel))/(np.max(skel) - np.min(skel))).astype('uint8')
 
-            skel = Image.fromarray(skel)
-            skel.save(self.output_path + '/skel/' + name + '.png')
+        #     skel = Image.fromarray(skel)
+        #     skel.save(self.output_path + '/bin/' + name + '.png')
 
         
         
         # return yhat
-        # for i, name in enumerate(names):
-        #     gabor = yhat[i, 1, :, :]
-        #     bin   = torch.nn.functional.sigmoid(gabor)
-        #     bin   = torch.round(bin)
+        for i, name in enumerate(names):
+            gabor = yhat[i, 0, :, :]
+            bin   = torch.nn.functional.sigmoid(gabor)
+            bin   = torch.round(bin)
 
-        #     gabor = gabor.cpu().numpy()
-        #     bin   = bin.cpu().numpy()
+            gabor = gabor.cpu().numpy()
+            bin   = bin.cpu().numpy()
 
 
-        #     gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
-        #     bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
+            gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
+            bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
 
-        #     gabor = Image.fromarray(gabor)
-        #     gabor.save(self.output_path + '/gabor/' + name + '.png')
+            gabor = Image.fromarray(gabor)
+            gabor.save(self.output_path + '/enh/' + name + '.png')
 
-        #     bin = Image.fromarray(bin)
-        #     bin.save(self.output_path + '/bin/' + name + '.png')
+            bin = Image.fromarray(bin)
+            bin.save(self.output_path + '/bin/' + name + '.png')
+
+        # return yhat
 
 
 
