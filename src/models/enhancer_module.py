@@ -175,7 +175,7 @@ class EnhancerLitModule(LightningModule):
         pred_bin = yhat[:,1,:,:]
 
 
-        # true_orig = y[:,0,:,:]
+        true_orig = y[:,0,:,:]
         true_bin = y[:,1,:,:]
         # y_skel = y[:,1,:,:]
         # mask = y[:,2,:,:]
