@@ -6,6 +6,7 @@ from torch import Tensor
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric, MinMetric
 import numpy as np
+import os
 from PIL import Image
 # from torchmetrics.classification.accuracy import Accuracy
 
@@ -337,26 +338,43 @@ class EnhancerLitModule(LightningModule):
         #     skel = Image.fromarray(skel)
         #     skel.save(self.output_path + '/bin/' + name + '.png')
 
+        gabor_path = os.path.join(self.output_path, "gabor")
+        if not os.path.exists(gabor_path):
+            os.makedirs(gabor_path)
+
+        bin_path = os.path.join(self.output_path, "bin")
+        if not os.path.exists(bin_path):
+            os.makedirs(bin_path)
+
+        enh_path = os.path.join(self.output_path, "enh")
+        if not os.path.exists(enh_path):
+            os.makedirs(enh_path)
         
         
         # return yhat
         for i, name in enumerate(names):
-            gabor = yhat[i, 0, :, :]
+            gabor = yhat[i, 1, :, :]
+            orig = yhat [i, 0, :, :]
             bin   = torch.nn.functional.sigmoid(gabor)
             bin   = torch.round(bin)
 
             gabor = gabor.cpu().numpy()
             bin   = bin.cpu().numpy()
+            orig  = orig.cpu().numpy()
 
 
             gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
             bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
+            orig   = (255 * (orig - np.min(orig))/(np.max(orig) - np.min(orig))).astype('uint8')
 
             gabor = Image.fromarray(gabor)
-            gabor.save(self.output_path + '/enh/' + name + '.png')
+            gabor.save(gabor_path + '/' + name + '.png')
 
             bin = Image.fromarray(bin)
-            bin.save(self.output_path + '/bin/' + name + '.png')
+            bin.save(bin_path + '/' + name + '.png')
+
+            orig = Image.fromarray(orig)
+            orig.save(enh_path + '/' + name + '.png')
 
         # return yhat
 

@@ -126,12 +126,12 @@ class TinyResUNet(nn.Module):
     in_channels: The number of input channels
     num_classes: The number of segmentation classes
     '''
-    def __init__(self, in_ch=3, out_ch=1, ndim=2, chs: tuple[int, ...] = (64, 128, 256, 512, 1024)):
+    def __init__(self, in_ch=3, out_ch=1, ndim=2, chs: tuple[int, ...] = (32, 64, 128, 256, 512)):
         super(TinyResUNet, self).__init__()
-        in_filters      = [192, 384, 768, 1024]
-        out_filters     = [64, 128, 256, 512]
-        # in_filters      = [96, 192, 384, 512]
-        # out_filters     = [32, 64, 128, 256]
+        # in_filters      = [192, 384, 768, 1024]
+        # out_filters     = [64, 128, 256, 512]
+        in_filters      = [96, 192, 384, 512]
+        out_filters     = [32, 64, 128, 256]
         self.encoder1   = UNetEncoder(in_ch, chs[0])
         self.encoder2   = UNetEncoder(chs[0], chs[1])
         self.encoder3   = UNetEncoder(chs[1], chs[2])
@@ -158,14 +158,14 @@ class TinyResUNet(nn.Module):
 
 
 if __name__ == '__main__':
-    model         = TinyResUNet(in_ch=3)
+    model         = TinyResUNet(in_ch=1)
 
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)
 
-    summary(model, (3, 512, 512))
+    summary(model, (1, 128, 128))
         
-    dummy_input   = torch.randn(1, 3, 512, 512).to(device)
+    dummy_input   = torch.randn(1, 1, 128, 128).to(device)
     flops, params = profile(model, (dummy_input, ), verbose=False)
     #-------------------------------------------------------------------------------#
     #   flops * 2 because profile does not consider convolution as two operations.

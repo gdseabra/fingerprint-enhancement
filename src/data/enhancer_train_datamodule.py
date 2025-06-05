@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.transforms import transforms
 
-from data.components.enhancer_train_dataset import EnhancerTrainDataset
+from data.components.enhancer_train_dataset import EnhancerTrainDataset, PatchEnhancerTrainDataset
 
 
 class EnhancerTrainDataModule(L.LightningDataModule):
@@ -58,7 +58,7 @@ class EnhancerTrainDataModule(L.LightningDataModule):
             self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
 
         if not self.data_train and not self.data_val:
-            dataset = EnhancerTrainDataset(self.hparams.data_dir, 
+            dataset = PatchEnhancerTrainDataset(self.hparams.data_dir, 
                                                   transform=self.transforms, 
                                                   skel_transform=self.skel_transforms,
                                                   data_list=self.hparams.data_list, 
