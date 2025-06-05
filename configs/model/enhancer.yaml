@@ -14,11 +14,11 @@ scheduler:
   patience: 2
 
 net:
-  _target_: src.models.components.TinyResUNet.TinyResUNet
+  _target_: src.models.components.ResUNetDWS.ResUNetDWS
   # _target_: src.models.components.ResUNet.ResUNet
   in_ch: 1
   ndim: 2
-  out_ch: 1
+  out_ch: 2
 
 # compile model for faster training with pytorch 2.0
 compile: false

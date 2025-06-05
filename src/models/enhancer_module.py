@@ -171,8 +171,8 @@ class EnhancerLitModule(LightningModule):
         x, y = batch
         yhat = self.forward(x)
 
-        # pred_orig  = yhat[:,0,:,:]
-        pred_bin = yhat[:,0,:,:]
+        pred_orig  = yhat[:,0,:,:]
+        pred_bin = yhat[:,1,:,:]
 
 
         # true_orig = y[:,0,:,:]
@@ -186,9 +186,9 @@ class EnhancerLitModule(LightningModule):
 
         # print(f"yhat shape: {yhat.shape}, y_orig shape: {y_orig.shape}, y_bin shape: {y_bin.shape}")
 
-        # loss  = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
+        loss  = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
 
-        loss = (self.criterion(pred_bin, true_bin) + dice_loss(F.sigmoid(pred_bin), true_bin, multiclass=False))
+        # loss = (self.criterion(pred_bin, true_bin) + dice_loss(F.sigmoid(pred_bin), true_bin, multiclass=False))
         # loss += 0.5 * self.mse_criterion(pred_orig, true_orig)
         # loss = self.mse_criterion(yhat, y_skel,  torch.ones_like(y_skel))
 
