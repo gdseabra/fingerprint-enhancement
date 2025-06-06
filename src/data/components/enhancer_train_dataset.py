@@ -310,8 +310,8 @@ class PatchEnhancerTrainDataset(Dataset):
         ref_white = ref.max()
         bin_white = bin.max()
         
-        # ref   = torch.where(mask == 0, ref_white, ref)
-        # bin = torch.where(mask == 0, bin_white, bin)
+        ref   = torch.where(mask == 0, ref_white, ref)
+        bin = torch.where(mask == 0, bin_white, bin)
 
 
         return lat, torch.concat([ref, bin], axis=0)
