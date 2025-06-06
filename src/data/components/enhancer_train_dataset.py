@@ -117,7 +117,7 @@ class PatchEnhancerTrainDataset(Dataset):
         skel_subdir = '/skel/', 
         bin_subdir = '/bin/', 
         mask_subdir = '/masks/', 
-        mnt_map_subdir='mnt_map', 
+        mnt_subdir='/mnt/', 
         apply_mask = 0, 
         patch_shape = (128,128), 
         stride = 128
@@ -140,7 +140,7 @@ class PatchEnhancerTrainDataset(Dataset):
         self.ref_suffix   = "." + os.listdir(data_dir + ref_subdir)[0].split(".")[-1]
         self.skel_suffix = "." + os.listdir(data_dir + skel_subdir)[0].split(".")[-1]
         self.bin_suffix = "." + os.listdir(data_dir + bin_subdir)[0].split(".")[-1]
-        self.mnt_map_suffix = "." + os.listdir(data_dir + mnt_map_subdir)[0].split(".")[-1]
+        self.mnt_suffix = "." + os.listdir(data_dir + mnt_subdir)[0].split(".")[-1]
         self.mask_suffix  = "." + os.listdir(data_dir + mask_subdir)[0].split(".")[-1]
         
         self.lat_subdir   = lat_subdir
@@ -148,7 +148,7 @@ class PatchEnhancerTrainDataset(Dataset):
         self.skel_subdir = skel_subdir
         self.bin_subdir = bin_subdir
         self.mask_subdir  = mask_subdir
-        self.mnt_map_subdir = mnt_map_subdir
+        self.mnt_subdir = mnt_subdir
 
         self.apply_mask = apply_mask
 
@@ -185,6 +185,70 @@ class PatchEnhancerTrainDataset(Dataset):
     def __len__(self):
         return self.num_patch
 
+    def read_mnt(self, file_name, threshold_score = 0.0):
+        f = open(file_name)
+        minutiae = []
+        for i, line in enumerate(f):
+            if i < 2 or len(line) == 0: continue
+
+            w, h, o, s, *rest = [float(x) for x in line.split()]
+            w, h = int(round(w)), int(round(h))
+            if s > threshold_score:
+                minutiae.append([w, h, o, s])
+        f.close()
+        return np.array(minutiae)
+
+    def extract_mcc_cpu(self, mnts, size, K: int, sigma: float = 5.0) -> torch.Tensor:
+        radius = 4
+        img = torch.zeros(size)
+        for (x, y, _, _) in mnts:
+            x, y = int(x), int(y)
+            img[y-radius:y+radius, x-radius:x+radius] = 1
+        
+        ndim = len(size)
+        img = img.long().numpy()
+
+        g_size = 6 * sigma + 3
+        x = np.arange(0, g_size, 1, float)
+        y = x[:, np.newaxis]
+        x0, y0 = 3 * sigma + 1, 3 * sigma + 1
+        g = np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (sigma**2))
+        output  = np.zeros((K, *img.shape), dtype=np.float32)
+
+        for x, y, o, s in mnts:
+            c = [y,x]
+            o = o % (2 * np.pi)
+            
+
+            # center
+            ul = tuple(int(np.round(c[i] - 3 * sigma - 1)) for i in reversed(range(ndim)))
+            br = tuple(int(np.round(c[i] + 3 * sigma + 2)) for i in reversed(range(ndim)))
+            g_crop = tuple(
+                slice(max(0, -ul[i]), min(br[i], size[i]) - ul[i])
+                for i in reversed(range(ndim))
+            )
+            c_crop = tuple(
+                slice(max(0, ul[i]), min(br[i], size[i])) for i in reversed(range(ndim))
+            )
+            for b in range(K):
+                diff       = o - b * np.pi/6
+                abs_diff   = np.abs(diff)
+                if diff < -np.pi or diff > np.pi:
+                    d = 2 * np.pi - abs_diff
+                else:
+                    d = abs_diff
+                
+                w = np.exp(-d / np.pi * 6)
+
+
+                try:
+                    output[b][c_crop] += g[g_crop] * w
+                except:
+                    pass
+                
+
+        return torch.from_numpy(output)
+
     def __getitem__(self, ix):
 
         row_col = self.patches_dict[ix][1]
@@ -198,14 +262,16 @@ class PatchEnhancerTrainDataset(Dataset):
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.patches_dict[ix][0] + self.ref_suffix)
             bin = Image.open(self.data_dir + self.bin_subdir + self.patches_dict[ix][0] + self.bin_suffix)
             # skel = Image.open(self.data_dir + self.skel_subdir + self.patches_dict[ix][0] + self.skel_suffix)
-            # mnt_map = Image.open(self.data_dir + self.mnt_map_subdir + self.patches_dict[ix][0] + self.mnt_map_suffix)
+            mnts = self.read_mnt(self.data_dir + self.mnt_subdir + self.patches_dict[ix][0] + self.mnt_suffix)
 
 
         except FileNotFoundError: # especial case when are dealing with an synthetic augmented dataset
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.patches_dict[ix][0].split('_')[0] + self.ref_suffix)
             bin = Image.open(self.data_dir + self.bin_subdir + self.patches_dict[ix][0].split('_')[0] + self.bin_suffix)
             # skel = Image.open(self.data_dir + self.skel_subdir + self.patches_dict[ix][0].split('_')[0] + self.skel_suffix)
-            # mnt_map = Image.open(self.data_dir + self.mnt_map_subdir + self.patches_dict[ix][0].split('_')[0] + self.mnt_map_suffix)
+            mnts = self.read_mnt(self.data_dir + self.mnt_subdir + self.patches_dict[ix][0].split('_')[0] + self.mnt_suffix)
+
+        mcc      = self.extract_mcc_cpu(mnts, ref.size, 12, 8)
 
 
         # normalizing lat and ref to -1, 1
@@ -214,6 +280,7 @@ class PatchEnhancerTrainDataset(Dataset):
         ref = transforms.ToTensor()(ref)
         bin = self.skel_transform(bin)
         mask  = self.skel_transform(mask)
+        
 
 
         # crop images to patch size and coords
@@ -221,6 +288,7 @@ class PatchEnhancerTrainDataset(Dataset):
         ref = ref[:,(row-self.input_row):row,(col-self.input_col):col]
         bin = bin[:,(row-self.input_row):row,(col-self.input_col):col]
         mask = mask[:,(row-self.input_row):row,(col-self.input_col):col]
+        mcc = mcc[:,(row-self.input_row):row,(col-self.input_col):col]
 
 
         lat_mean = torch.mean(lat)

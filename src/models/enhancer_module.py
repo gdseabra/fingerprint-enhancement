@@ -101,7 +101,10 @@ class EnhancerLitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
-        output_path: str = None
+        output_path: str = None,
+        patch_size: Tuple[int, int] = (128, 128),
+        use_patches: bool = False,
+        stride: int = 8,
 
     ) -> None:
         """Initialize a `EnhancerLitModule`.
@@ -125,7 +128,11 @@ class EnhancerLitModule(LightningModule):
         self.bce_criterion = torch.nn.functional.binary_cross_entropy_with_logits
 
 
-
+        self.patch_size = patch_size
+        self.use_patches = use_patches
+        self.stride = stride
+        self.input_row = self.patch_size[0]
+        self.input_col = self.patch_size[1]
         # metric objects for calculating and averaging accuracy across batches
         # self.train_acc = Accuracy(task="multiclass", num_classes=10)
         # self.val_acc = Accuracy(task="multiclass", num_classes=10)
@@ -325,18 +332,9 @@ class EnhancerLitModule(LightningModule):
         data  = batch[0]
         names = batch[1]
         x, y = batch
-        yhat = self.forward(x)
 
-        # for i, name in enumerate(names):
-        #     skel = yhat[i, 1, :, :]
-
-        #     skel = skel.cpu().numpy()
-
-
-        #     skel = (255 * (skel - np.min(skel))/(np.max(skel) - np.min(skel))).astype('uint8')
-
-        #     skel = Image.fromarray(skel)
-        #     skel.save(self.output_path + '/bin/' + name + '.png')
+        # print(data.shape) # (28,1,128,128)
+        # print(y) # tupla com todos os nomes das imagens do batch
 
         gabor_path = os.path.join(self.output_path, "gabor")
         if not os.path.exists(gabor_path):
@@ -349,19 +347,40 @@ class EnhancerLitModule(LightningModule):
         enh_path = os.path.join(self.output_path, "enh")
         if not os.path.exists(enh_path):
             os.makedirs(enh_path)
-        
-        
-        # return yhat
+
+        if not self.use_patches:
+            latent_en = self.forward(x)
+        else:
+            shape_latent = data.shape
+            ROW = shape_latent[2]
+            COL = shape_latent[3]
+            row_list_1 = range(self.input_row, ROW+1, self.stride)
+            row_list_2 = range(ROW, row_list_1[-1]-1,-self.stride)
+            row_list = [*row_list_1, *row_list_2]
+            
+            col_list_1 = range(self.input_col, COL+1, self.stride)
+            col_list_2 = range(COL, col_list_1[-1]-1, -self.stride)
+            col_list = [*col_list_1,*col_list_2]
+
+            patch_ind = 0
+
+            latent_en = torch.zeros((data.shape[0], 2, data.shape[2], data.shape[3]), device=x.device)
+            
+            for row_ind in row_list:
+                for col_ind in col_list:
+                    patch_pred = self.forward(data[:,:,(row_ind-self.input_row):row_ind,(col_ind-self.input_col):col_ind])
+                    latent_en[:,:,(row_ind-self.input_row):row_ind, (col_ind-self.input_col):col_ind] += patch_pred
+
         for i, name in enumerate(names):
-            gabor = yhat[i, 1, :, :]
-            orig = yhat [i, 0, :, :]
+            gabor   = latent_en[i, 1, :, :]
+            orig    = latent_en[i, 0, :, :]
+
             bin   = torch.nn.functional.sigmoid(gabor)
             bin   = torch.round(bin)
 
             gabor = gabor.cpu().numpy()
             bin   = bin.cpu().numpy()
             orig  = orig.cpu().numpy()
-
 
             gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
             bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
@@ -376,7 +395,6 @@ class EnhancerLitModule(LightningModule):
             orig = Image.fromarray(orig)
             orig.save(enh_path + '/' + name + '.png')
 
-        # return yhat
 
 
 

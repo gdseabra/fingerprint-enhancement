@@ -24,3 +24,5 @@ net:
 compile: false
 
 output_path: /home/gabriel/fingerprint-enhancement/output/
+
+use_patches: true
