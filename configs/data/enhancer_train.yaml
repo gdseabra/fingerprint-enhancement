@@ -10,7 +10,8 @@ mask_subdir: /synth_lat_nfiq80_masks/0/
 # mask_subdir: /masks_orig/
 mnt_subdir: /mnts_ref_fusion/
 apply_mask: 1
-batch_size: 2240 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+# batch_size: 2240 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+batch_size: 128
 train_val_split: [0.7, 0.3]
 num_workers: 8
 pin_memory: True

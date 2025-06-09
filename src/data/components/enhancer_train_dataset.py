@@ -19,7 +19,7 @@ class EnhancerTrainDataset(Dataset):
         skel_subdir = '/skel/', 
         bin_subdir = '/bin/', 
         mask_subdir = '/masks/', 
-        mnt_map_subdir='mnt_map', 
+        mnt_subdir='mnt', 
         apply_mask = 0
     ):
         self.data_dir        = data_dir
@@ -36,7 +36,7 @@ class EnhancerTrainDataset(Dataset):
         self.ref_suffix   = "." + os.listdir(data_dir + ref_subdir)[0].split(".")[-1]
         self.skel_suffix = "." + os.listdir(data_dir + skel_subdir)[0].split(".")[-1]
         self.bin_suffix = "." + os.listdir(data_dir + bin_subdir)[0].split(".")[-1]
-        self.mnt_map_suffix = "." + os.listdir(data_dir + mnt_map_subdir)[0].split(".")[-1]
+        self.mnt_suffix = "." + os.listdir(data_dir + mnt_subdir)[0].split(".")[-1]
         self.mask_suffix  = "." + os.listdir(data_dir + mask_subdir)[0].split(".")[-1]
         
         self.lat_subdir   = lat_subdir
@@ -44,7 +44,7 @@ class EnhancerTrainDataset(Dataset):
         self.skel_subdir = skel_subdir
         self.bin_subdir = bin_subdir
         self.mask_subdir  = mask_subdir
-        self.mnt_map_subdir = mnt_map_subdir
+        self.mnt_subdir = mnt_subdir
 
         self.apply_mask = apply_mask
 
@@ -60,14 +60,14 @@ class EnhancerTrainDataset(Dataset):
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.data[ix] + self.ref_suffix)
             bin = Image.open(self.data_dir + self.bin_subdir + self.data[ix] + self.bin_suffix)
             # skel = Image.open(self.data_dir + self.skel_subdir + self.data[ix] + self.skel_suffix)
-            # mnt_map = Image.open(self.data_dir + self.mnt_map_subdir + self.data[ix] + self.mnt_map_suffix)
+            # mnt = Image.open(self.data_dir + self.mnt_subdir + self.data[ix] + self.mnt_suffix)
 
 
         except FileNotFoundError: # especial case when are dealing with an synthetic augmented dataset
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.data[ix].split('_')[0] + self.ref_suffix)
             bin = Image.open(self.data_dir + self.bin_subdir + self.data[ix].split('_')[0] + self.bin_suffix)
             # skel = Image.open(self.data_dir + self.skel_subdir + self.data[ix].split('_')[0] + self.skel_suffix)
-            # mnt_map = Image.open(self.data_dir + self.mnt_map_subdir + self.data[ix].split('_')[0] + self.mnt_map_suffix)
+            # mnt = Image.open(self.data_dir + self.mnt_subdir + self.data[ix].split('_')[0] + self.mnt_suffix)
 
 
         # normalizing lat and ref to -1, 1
@@ -91,7 +91,7 @@ class EnhancerTrainDataset(Dataset):
         # if self.skel_transform:
         bin = self.skel_transform(bin)
         mask  = self.skel_transform(mask)
-            # mnt_map = self.skel_transform(mnt_map)
+            # mnt = self.skel_transform(mnt)
 
         ref_white = ref.max()
         bin_white = bin.max()
@@ -99,7 +99,7 @@ class EnhancerTrainDataset(Dataset):
         ref   = torch.where(mask == 0, ref_white, ref)
         bin = torch.where(mask == 0, bin_white, bin)
 
-        return lat, torch.concat([ref, bin], axis=0)
+        return lat, torch.concat([ref, bin, mask], axis=0)
 
     def __len__(self):
         return len(self.data)
@@ -305,7 +305,7 @@ class PatchEnhancerTrainDataset(Dataset):
         ref = transforms.Normalize(mean=[ref_mean], std=[2 * ref_std + epsilon])(ref)
 
         # if self.skel_transform:
-            # mnt_map = self.skel_transform(mnt_map)
+            # mnt = self.skel_transform(mnt)
 
         ref_white = ref.max()
         bin_white = bin.max()
@@ -314,4 +314,4 @@ class PatchEnhancerTrainDataset(Dataset):
         bin = torch.where(mask == 0, bin_white, bin)
 
 
-        return lat, torch.concat([ref, bin], axis=0)
+        return lat, torch.concat([ref, bin, mask], axis=0)

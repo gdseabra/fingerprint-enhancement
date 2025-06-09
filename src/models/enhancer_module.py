@@ -185,16 +185,38 @@ class EnhancerLitModule(LightningModule):
 
         true_orig = y[:,0,:,:]
         true_bin = y[:,1,:,:]
-        # y_skel = y[:,1,:,:]
-        # mask = y[:,2,:,:]
-        # mnt_map = y[:,3,:,:]
+        mask = y[:,2,:,:]
 
+        seg_loss_weight = 0.5
+        
+        # MSE Loss com máscara
+        mse_loss_ridge = F.mse_loss(pred_orig * mask, true_orig * mask, reduction='sum')
+        mse_loss_ridge = mse_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        # loss = self.criterion(yhat, y_bin)
+        # BCE Loss com máscara
+        bce_loss_ridge = F.binary_cross_entropy_with_logits(
+            pred_bin, true_bin, weight=mask, reduction='sum'
+        )
+        bce_loss_ridge = bce_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        # print(f"yhat shape: {yhat.shape}, y_orig shape: {y_orig.shape}, y_bin shape: {y_bin.shape}")
+        mask_seg = 1 - mask
+        # MSE Loss de segmentação
+        mse_loss_seg = F.mse_loss(pred_orig * mask_seg, true_orig * mask_seg, reduction='sum')
+        mse_loss_seg = mse_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        loss  = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
+        # BCE Loss de segmentação
+        bce_loss_seg = F.binary_cross_entropy_with_logits(
+            pred_bin, true_bin, weight=mask_seg, reduction='sum'
+        )
+        bce_loss_seg = bce_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+
+        # Total loss ponderada de segmentação
+        total_loss = (1 - seg_loss_weight)* (0.5 * mse_loss_ridge + 0.5 * bce_loss_ridge) + seg_loss_weight*(0.5 * mse_loss_seg + 0.5 * bce_loss_seg)
+
+        # total_loss = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
+        
+
+        # assert(2==1)
 
         # loss = (self.criterion(pred_bin, true_bin) + dice_loss(F.sigmoid(pred_bin), true_bin, multiclass=False))
         # loss += 0.5 * self.mse_criterion(pred_orig, true_orig)

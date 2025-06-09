@@ -16,4 +16,4 @@ tags: ["dev"]
 
 # passing checkpoint path is necessary for evaluation
 # ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-05-18_04-36-05/checkpoints/last.ckpt
-ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-06-05_20-24-37/checkpoints/last.ckpt
+ckpt_path: /home/gabriel/fingerprint-enhancement/logs/train/runs/2025-05-29_21-25-11/checkpoints/last.ckpt
