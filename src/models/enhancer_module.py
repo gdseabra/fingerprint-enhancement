@@ -6,6 +6,7 @@ from torch import Tensor
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric, MinMetric
 import numpy as np
+import os
 from PIL import Image
 # from torchmetrics.classification.accuracy import Accuracy
 
@@ -100,7 +101,10 @@ class EnhancerLitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
-        output_path: str = None
+        output_path: str = None,
+        patch_size: Tuple[int, int] = (128, 128),
+        use_patches: bool = False,
+        stride: int = 8,
 
     ) -> None:
         """Initialize a `EnhancerLitModule`.
@@ -124,7 +128,11 @@ class EnhancerLitModule(LightningModule):
         self.bce_criterion = torch.nn.functional.binary_cross_entropy_with_logits
 
 
-
+        self.patch_size = patch_size
+        self.use_patches = use_patches
+        self.stride = stride
+        self.input_row = self.patch_size[0]
+        self.input_col = self.patch_size[1]
         # metric objects for calculating and averaging accuracy across batches
         # self.train_acc = Accuracy(task="multiclass", num_classes=10)
         # self.val_acc = Accuracy(task="multiclass", num_classes=10)
@@ -177,16 +185,38 @@ class EnhancerLitModule(LightningModule):
 
         true_orig = y[:,0,:,:]
         true_bin = y[:,1,:,:]
-        # y_skel = y[:,1,:,:]
-        # mask = y[:,2,:,:]
-        # mnt_map = y[:,3,:,:]
+        mask = y[:,2,:,:]
 
+        seg_loss_weight = 0.5
+        
+        # MSE Loss com máscara
+        mse_loss_ridge = F.mse_loss(pred_orig * mask, true_orig * mask, reduction='sum')
+        mse_loss_ridge = mse_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        # loss = self.criterion(yhat, y_bin)
+        # BCE Loss com máscara
+        bce_loss_ridge = F.binary_cross_entropy_with_logits(
+            pred_bin, true_bin, weight=mask, reduction='sum'
+        )
+        bce_loss_ridge = bce_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        # print(f"yhat shape: {yhat.shape}, y_orig shape: {y_orig.shape}, y_bin shape: {y_bin.shape}")
+        mask_seg = 1 - mask
+        # MSE Loss de segmentação
+        mse_loss_seg = F.mse_loss(pred_orig * mask_seg, true_orig * mask_seg, reduction='sum')
+        mse_loss_seg = mse_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        loss  = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
+        # BCE Loss de segmentação
+        bce_loss_seg = F.binary_cross_entropy_with_logits(
+            pred_bin, true_bin, weight=mask_seg, reduction='sum'
+        )
+        bce_loss_seg = bce_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+
+        # Total loss ponderada de segmentação
+        total_loss = (1 - seg_loss_weight)* (0.5 * mse_loss_ridge + 0.5 * bce_loss_ridge) + seg_loss_weight*(0.5 * mse_loss_seg + 0.5 * bce_loss_seg)
+
+        # total_loss = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
+        
+
+        # assert(2==1)
 
         # loss = (self.criterion(pred_bin, true_bin) + dice_loss(F.sigmoid(pred_bin), true_bin, multiclass=False))
         # loss += 0.5 * self.mse_criterion(pred_orig, true_orig)
@@ -324,41 +354,69 @@ class EnhancerLitModule(LightningModule):
         data  = batch[0]
         names = batch[1]
         x, y = batch
-        yhat = self.forward(x)
 
-        # for i, name in enumerate(names):
-        #     skel = yhat[i, 1, :, :]
+        # print(data.shape) # (28,1,128,128)
+        # print(y) # tupla com todos os nomes das imagens do batch
 
-        #     skel = skel.cpu().numpy()
+        gabor_path = os.path.join(self.output_path, "gabor")
+        if not os.path.exists(gabor_path):
+            os.makedirs(gabor_path)
 
+        bin_path = os.path.join(self.output_path, "bin")
+        if not os.path.exists(bin_path):
+            os.makedirs(bin_path)
 
-        #     skel = (255 * (skel - np.min(skel))/(np.max(skel) - np.min(skel))).astype('uint8')
+        enh_path = os.path.join(self.output_path, "enh")
+        if not os.path.exists(enh_path):
+            os.makedirs(enh_path)
 
-        #     skel = Image.fromarray(skel)
-        #     skel.save(self.output_path + '/bin/' + name + '.png')
+        if not self.use_patches:
+            latent_en = self.forward(x)
+        else:
+            shape_latent = data.shape
+            ROW = shape_latent[2]
+            COL = shape_latent[3]
+            row_list_1 = range(self.input_row, ROW+1, self.stride)
+            row_list_2 = range(ROW, row_list_1[-1]-1,-self.stride)
+            row_list = [*row_list_1, *row_list_2]
+            
+            col_list_1 = range(self.input_col, COL+1, self.stride)
+            col_list_2 = range(COL, col_list_1[-1]-1, -self.stride)
+            col_list = [*col_list_1,*col_list_2]
 
-        
-        
-        # return yhat
+            patch_ind = 0
+
+            latent_en = torch.zeros((data.shape[0], 2, data.shape[2], data.shape[3]), device=x.device)
+            
+            for row_ind in row_list:
+                for col_ind in col_list:
+                    patch_pred = self.forward(data[:,:,(row_ind-self.input_row):row_ind,(col_ind-self.input_col):col_ind])
+                    latent_en[:,:,(row_ind-self.input_row):row_ind, (col_ind-self.input_col):col_ind] += patch_pred
+
         for i, name in enumerate(names):
-            gabor = yhat[i, 0, :, :]
+            gabor   = latent_en[i, 1, :, :]
+            orig    = latent_en[i, 0, :, :]
+
             bin   = torch.nn.functional.sigmoid(gabor)
             bin   = torch.round(bin)
 
             gabor = gabor.cpu().numpy()
             bin   = bin.cpu().numpy()
-
+            orig  = orig.cpu().numpy()
 
             gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
             bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
+            orig   = (255 * (orig - np.min(orig))/(np.max(orig) - np.min(orig))).astype('uint8')
 
             gabor = Image.fromarray(gabor)
-            gabor.save(self.output_path + '/enh/' + name + '.png')
+            gabor.save(gabor_path + '/' + name + '.png')
 
             bin = Image.fromarray(bin)
-            bin.save(self.output_path + '/bin/' + name + '.png')
+            bin.save(bin_path + '/' + name + '.png')
 
-        # return yhat
+            orig = Image.fromarray(orig)
+            orig.save(enh_path + '/' + name + '.png')
+
 
 
 

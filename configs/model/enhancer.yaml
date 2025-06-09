@@ -14,8 +14,8 @@ scheduler:
   patience: 2
 
 net:
-  _target_: src.models.components.ResUNetDWS.ResUNetDWS
-  # _target_: src.models.components.ResUNet.ResUNet
+  _target_: src.models.components.ResUNet.ResUNet
+  # _target_: src.models.components.TinyResUNet.TinyResUNet
   in_ch: 1
   ndim: 2
   out_ch: 2
@@ -24,3 +24,5 @@ net:
 compile: false
 
 output_path: /home/gabriel/fingerprint-enhancement/output/
+
+use_patches: false

@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.transforms import transforms
 
-from data.components.enhancer_train_dataset import EnhancerTrainDataset
+from data.components.enhancer_train_dataset import EnhancerTrainDataset, PatchEnhancerTrainDataset
 
 
 class EnhancerTrainDataModule(L.LightningDataModule):
@@ -17,7 +17,7 @@ class EnhancerTrainDataModule(L.LightningDataModule):
         skel_subdir: str = '/skel/',
         mask_subdir: str = '/masks/',
         bin_subdir: str = '/bin/',
-        mnt_map_subdir: str = '/mnt_map/',
+        mnt_subdir: str = '/mnt/',
         apply_mask: int = 0,
         data_list: str = None,
         batch_size: int = 64,
@@ -67,7 +67,7 @@ class EnhancerTrainDataModule(L.LightningDataModule):
                                                   skel_subdir=self.hparams.skel_subdir,
                                                   bin_subdir=self.hparams.bin_subdir,
                                                   mask_subdir=self.hparams.mask_subdir,
-                                                  mnt_map_subdir=self.hparams.mnt_map_subdir,
+                                                  mnt_subdir=self.hparams.mnt_subdir,
                                                   apply_mask =self.hparams.apply_mask
                                                   )
 
