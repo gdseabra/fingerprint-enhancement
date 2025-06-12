@@ -75,9 +75,9 @@ class CMRF(nn.Module):
 U-shape/U-like Model
 '''
 # Encoder in TinyResUNet
-class UNetEncoder(nn.Module):
+class EncoderBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
-        super(UNetEncoder, self).__init__()
+        super(EncoderBlock, self).__init__()
         self.cmrf       = CMRF(in_channels, out_channels)
         self.downsample = nn.MaxPool2d(kernel_size=2, stride=2)
 
@@ -96,9 +96,9 @@ class UNetEncoder(nn.Module):
         return self.downsample(x), x
 
 
-class UNetDecoder(nn.Module):
+class DecoderBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
-        super(UNetDecoder, self).__init__()
+        super(DecoderBlock, self).__init__()
         self.cmrf     = CMRF(in_channels, out_channels)
         self.upsample = F.interpolate
 
@@ -118,43 +118,91 @@ class UNetDecoder(nn.Module):
         x = x + residual  # residual connection
         return x
 
+class Encoder(nn.Module):
+    def __init__(self, in_ch, chs: tuple[int, ...]):
+        super().__init__()
+        self.encoder1 = EncoderBlock(in_ch, chs[0])
+        self.encoder2 = EncoderBlock(chs[0], chs[1])
+        self.encoder3 = EncoderBlock(chs[1], chs[2])
+        self.encoder4 = EncoderBlock(chs[2], chs[3])
 
-# TinyU-Net
-class TinyResUNet(nn.Module):
-    """TinyU-Net with args(in_channels, num_classes)."""
-    '''
-    in_channels: The number of input channels
-    num_classes: The number of segmentation classes
-    '''
-    def __init__(self, in_ch=3, out_ch=1, ndim=2, chs: tuple[int, ...] = (32, 64, 128, 256, 512)):
-        super(TinyResUNet, self).__init__()
-        # in_filters      = [192, 384, 768, 1024]
-        # out_filters     = [64, 128, 256, 512]
-        in_filters      = [96, 192, 384, 512]
-        out_filters     = [32, 64, 128, 256]
-        self.encoder1   = UNetEncoder(in_ch, chs[0])
-        self.encoder2   = UNetEncoder(chs[0], chs[1])
-        self.encoder3   = UNetEncoder(chs[1], chs[2])
-        self.encoder4   = UNetEncoder(chs[2], chs[3])
-
-        self.decoder4   = UNetDecoder(in_filters[3], out_filters[3])
-        self.decoder3   = UNetDecoder(in_filters[2], out_filters[2])
-        self.decoder2   = UNetDecoder(in_filters[1], out_filters[1])
-        self.decoder1   = UNetDecoder(in_filters[0], out_filters[0])
-        self.final_conv = nn.Conv2d(out_filters[0], out_ch, kernel_size=1)
-        
     def forward(self, x):
         x, skip1 = self.encoder1(x)
         x, skip2 = self.encoder2(x)
         x, skip3 = self.encoder3(x)
         x, skip4 = self.encoder4(x)
+        return x, [skip1, skip2, skip3, skip4]
 
-        x        = self.decoder4(x, skip4)
-        x        = self.decoder3(x, skip3)
-        x        = self.decoder2(x, skip2)
-        x        = self.decoder1(x, skip1)
-        x        = self.final_conv(x)
-        return x
+
+class Decoder(nn.Module):
+    def __init__(self, in_filters, out_filters, out_ch):
+        super().__init__()
+        self.decoder4 = DecoderBlock(in_filters[3], out_filters[3])
+        self.decoder3 = DecoderBlock(in_filters[2], out_filters[2])
+        self.decoder2 = DecoderBlock(in_filters[1], out_filters[1])
+        self.decoder1 = DecoderBlock(in_filters[0], out_filters[0])
+        self.final_conv = nn.Conv2d(out_filters[0], out_ch, kernel_size=1)
+
+    def forward(self, x, skips):
+        x = self.decoder4(x, skips[3])
+        x = self.decoder3(x, skips[2])
+        x = self.decoder2(x, skips[1])
+        x = self.decoder1(x, skips[0])
+        return self.final_conv(x)
+
+class TinyResUNet(nn.Module):
+    def __init__(self, in_ch=3, out_ch1=1, out_ch2=1, chs: tuple[int, ...] = (32, 64, 128, 256, 512)):
+        super().__init__()
+        in_filters  = [96, 192, 384, 512]
+        out_filters = [32, 64, 128, 256]
+
+        self.encoder = SharedEncoder(in_ch, chs)
+        self.decoder1 = Decoder(in_filters, out_filters, out_ch1)
+        self.decoder2 = Decoder(in_filters, out_filters, out_ch2)
+
+    def forward(self, x):
+        x_enc, skips = self.encoder(x)
+        out1 = self.decoder1(x_enc, skips)
+        out2 = self.decoder2(x_enc, skips)
+        return out1, out2
+
+
+# TinyU-Net
+# class TinyResUNet(nn.Module):
+#     """TinyU-Net with args(in_channels, num_classes)."""
+#     '''
+#     in_channels: The number of input channels
+#     num_classes: The number of segmentation classes
+#     '''
+#     def __init__(self, in_ch=3, out_ch=1, ndim=2, chs: tuple[int, ...] = (32, 64, 128, 256, 512)):
+#         super(TinyResUNet, self).__init__()
+#         # in_filters      = [192, 384, 768, 1024]
+#         # out_filters     = [64, 128, 256, 512]
+#         in_filters      = [96, 192, 384, 512]
+#         out_filters     = [32, 64, 128, 256]
+#         self.encoder1   = EncoderBlock(in_ch, chs[0])
+#         self.encoder2   = EncoderBlock(chs[0], chs[1])
+#         self.encoder3   = EncoderBlock(chs[1], chs[2])
+#         self.encoder4   = EncoderBlock(chs[2], chs[3])
+
+#         self.decoder4   = DecoderBlock(in_filters[3], out_filters[3])
+#         self.decoder3   = DecoderBlock(in_filters[2], out_filters[2])
+#         self.decoder2   = DecoderBlock(in_filters[1], out_filters[1])
+#         self.decoder1   = DecoderBlock(in_filters[0], out_filters[0])
+#         self.final_conv = nn.Conv2d(out_filters[0], out_ch, kernel_size=1)
+        
+#     def forward(self, x):
+#         x, skip1 = self.encoder1(x)
+#         x, skip2 = self.encoder2(x)
+#         x, skip3 = self.encoder3(x)
+#         x, skip4 = self.encoder4(x)
+
+#         x        = self.decoder4(x, skip4)
+#         x        = self.decoder3(x, skip3)
+#         x        = self.decoder2(x, skip2)
+#         x        = self.decoder1(x, skip1)
+#         x        = self.final_conv(x)
+#         return x
 
 
 if __name__ == '__main__':

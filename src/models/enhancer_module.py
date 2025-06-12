@@ -187,7 +187,7 @@ class EnhancerLitModule(LightningModule):
         true_bin = y[:,1,:,:]
         mask = y[:,2,:,:]
 
-        seg_loss_weight = 0.5
+        seg_loss_weight = 0.2
         
         # MSE Loss com máscara
         mse_loss_ridge = F.mse_loss(pred_orig * mask, true_orig * mask, reduction='sum')
@@ -237,7 +237,7 @@ class EnhancerLitModule(LightningModule):
         #     # print(name)
         #     mnt.save(self.output_path + '/mnt/' + str(i) + '.png')
         
-        return loss
+        return total_loss
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
