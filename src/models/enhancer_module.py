@@ -61,6 +61,43 @@ class MyWeightedL1Loss(nn.L1Loss):
         loss = pixel_mae
         return loss.sum()/(loss.size(0)) # mean per-image loss (not per-pixel or per-batch).
 
+class MaskedBCELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits, targets, mask):
+        """
+        :param logits: Tensor of shape (N, 1, H, W) - raw model outputs
+        :param targets: Tensor of shape (N, 1, H, W) - binary labels
+        :param mask: Tensor of shape (N, 1, H, W) - binary mask (1=foreground, 0=background)
+        """
+        bce_loss = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+
+        foreground = mask.bool()
+
+        # Avoid empty masks by clamping denominator
+        foreground_loss = bce_loss[foreground].mean() if foreground.any() else torch.tensor(0.0, device=logits.device)
+
+        return foreground_loss
+
+class MaskedMSELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits, targets, mask):
+        """
+        :param logits: Tensor of shape (N, 1, H, W) - raw model outputs
+        :param targets: Tensor of shape (N, 1, H, W) - binary labels
+        :param mask: Tensor of shape (N, 1, H, W) - binary mask (1=foreground, 0=background)
+        """
+        mse_loss = F.mse_loss(logits, targets, reduction='none')
+
+        foreground = mask.bool()
+
+        # Avoid empty masks by clamping denominator
+        foreground_loss = mse_loss[foreground].mean() if foreground.any() else torch.tensor(0.0, device=logits.device)
+
+        return foreground_loss
 
 
 class EnhancerLitModule(LightningModule):
@@ -183,35 +220,48 @@ class EnhancerLitModule(LightningModule):
         pred_bin = yhat[:,1,:,:]
 
 
-        true_orig = y[:,0,:,:]
-        true_bin = y[:,1,:,:]
-        mask = y[:,2,:,:]
+        true_orig   = y[:,0,:,:]
+        true_bin    = y[:,1,:,:]
+        mask        = y[:,2,:,:]
+        occ_mask    = y[:,3,:,:]
 
-        seg_loss_weight = 0.2
+
+        masked_bce_criterion = MaskedBCELoss()
+        masked_mse_criterion = MaskedMSELoss()
         
-        # MSE Loss com máscara
-        mse_loss_ridge = F.mse_loss(pred_orig * mask, true_orig * mask, reduction='sum')
-        mse_loss_ridge = mse_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+        foreground_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, mask*occ_mask)+0.5*masked_mse_criterion(pred_bin, true_bin, mask*occ_mask)
+        background_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-mask)) + 0.5*masked_mse_criterion(pred_bin, true_bin, (1-mask))
+        occlusion_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-occ_mask)) + 0.5*masked_mse_criterion(pred_bin, true_bin, (1-occ_mask))
 
-        # BCE Loss com máscara
-        bce_loss_ridge = F.binary_cross_entropy_with_logits(
-            pred_bin, true_bin, weight=mask, reduction='sum'
-        )
-        bce_loss_ridge = bce_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+        w_occ, w_fg, w_bg = (0.2, 0.4, 0.4)
 
-        mask_seg = 1 - mask
-        # MSE Loss de segmentação
-        mse_loss_seg = F.mse_loss(pred_orig * mask_seg, true_orig * mask_seg, reduction='sum')
-        mse_loss_seg = mse_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+        total_loss = w_occ*occlusion_loss + w_fg*foreground_loss + w_bg*background_loss 
 
-        # BCE Loss de segmentação
-        bce_loss_seg = F.binary_cross_entropy_with_logits(
-            pred_bin, true_bin, weight=mask_seg, reduction='sum'
-        )
-        bce_loss_seg = bce_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+        # seg_loss_weight = 0.2
+        
+        # # MSE Loss com máscara
+        # mse_loss_ridge = F.mse_loss(pred_orig * mask, true_orig * mask, reduction='sum')
+        # mse_loss_ridge = mse_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        # Total loss ponderada de segmentação
-        total_loss = (1 - seg_loss_weight)* (0.5 * mse_loss_ridge + 0.5 * bce_loss_ridge) + seg_loss_weight*(0.5 * mse_loss_seg + 0.5 * bce_loss_seg)
+        # # BCE Loss com máscara
+        # bce_loss_ridge = F.binary_cross_entropy_with_logits(
+        #     pred_bin, true_bin, weight=mask, reduction='sum'
+        # )
+        # bce_loss_ridge = bce_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+
+        # mask_seg = 1 - mask
+        # # MSE Loss de segmentação
+        # mse_loss_seg = F.mse_loss(pred_orig * mask_seg, true_orig * mask_seg, reduction='sum')
+        # mse_loss_seg = mse_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+
+        # # BCE Loss de segmentação
+        # bce_loss_seg = F.binary_cross_entropy_with_logits(
+        #     pred_bin, true_bin, weight=mask_seg, reduction='sum'
+        # )
+        # bce_loss_seg = bce_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+
+        # # Total loss ponderada de segmentação
+        # total_loss = (1 - seg_loss_weight)* (0.5 * mse_loss_ridge + 0.5 * bce_loss_ridge) + seg_loss_weight*(0.5 * mse_loss_seg + 0.5 * bce_loss_seg)
 
         # total_loss = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
         

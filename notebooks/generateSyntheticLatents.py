@@ -167,7 +167,25 @@ def create_output_dir(directory):
     except FileExistsError:
         print('Warning: Output folder already exists. Files may be overwritten.')
 
+def random_occlusions(img, max_squares=40, max_lines=5):
+    img = np.ones_like(img, dtype=np.uint8)
+    h, w = img.shape[:2]
 
+    # Add random black squares
+    for _ in range(random.randint(10, max_squares)):
+        square_size = random.randint(16, 20)
+        x = random.randint(0, w - square_size)
+        y = random.randint(0, h - square_size)
+        img[y:y+square_size, x:x+square_size] = 0  # Black square
+
+    # Add random black lines
+    for _ in range(random.randint(3, max_lines)):
+        x1, y1 = random.randint(0, w), random.randint(0, h)
+        x2, y2 = random.randint(0, w), random.randint(0, h)
+        thickness = 5
+        cv2.line(img, (x1, y1), (x2, y2), color=0, thickness=thickness)
+
+    return img.astype(np.uint8)
 
 def generate_mask(base_mask, area_range=(16000, 32000)):
     """
@@ -231,14 +249,14 @@ def process_image(args):
         mask = np.array(Image.open(mask_file).convert('L')) > 127  # binariza
 
         for j in range(num_synthetic):
-            new_mask = generate_mask(mask)
-            img = np.where(new_mask == 0, img.max(), img)
+            occ_mask = random_occlusions(mask)
+            # img = np.where(new_mask == 0, img.max(), img)
             out = generate_synthetic_latent(img, background_path)
             filename = os.path.join(output_dir, basename.replace('.png', f'_aug{j}.png'))
             cv2.imwrite(filename, out.astype(np.uint8))
             
             mask_filename = os.path.join(mask_out_dir, basename.replace('.png', f'_aug{j}.png'))
-            cv2.imwrite(mask_filename, new_mask*255)
+            cv2.imwrite(mask_filename, occ_mask*255)
     except Exception as e:
         print("Failed for image ", basename, "Error: ", e)
 
