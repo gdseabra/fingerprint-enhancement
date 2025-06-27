@@ -4,7 +4,7 @@
 root_dir: ${oc.env:PROJECT_ROOT}
 
 # path to data directory
-data_dir: /storage/seabra/basen_train/
+data_dir: /fast8TB/gabriel/basen_train/
 
 # path to logging directory
 log_dir: ${paths.root_dir}/logs/

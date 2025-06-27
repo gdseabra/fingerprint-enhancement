@@ -23,6 +23,6 @@ net:
 # compile model for faster training with pytorch 2.0
 compile: false
 
-output_path: /home/seabra/fingerprint-enhancement/output/
+output_path: /home/gabriel/fingerprint-enhancement/output/
 
 use_patches: false
