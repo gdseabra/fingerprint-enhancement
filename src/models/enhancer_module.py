@@ -229,9 +229,9 @@ class EnhancerLitModule(LightningModule):
         masked_bce_criterion = MaskedBCELoss()
         masked_mse_criterion = MaskedMSELoss()
         
-        foreground_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, mask*occ_mask)+0.5*masked_mse_criterion(pred_bin, true_bin, mask*occ_mask)
-        background_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-mask)) + 0.5*masked_mse_criterion(pred_bin, true_bin, (1-mask))
-        occlusion_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-occ_mask)) + 0.5*masked_mse_criterion(pred_bin, true_bin, (1-occ_mask))
+        foreground_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, mask*occ_mask)+0.5*masked_mse_criterion(pred_orig, true_orig, mask*occ_mask)
+        background_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-mask))
+        occlusion_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-occ_mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-occ_mask))
 
         w_occ, w_fg, w_bg = (0.1, 0.45, 0.45)
 
