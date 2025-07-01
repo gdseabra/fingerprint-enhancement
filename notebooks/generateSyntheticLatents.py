@@ -150,6 +150,31 @@ def generate_synthetic_latent(img, background_path):
 
     return out.astype(int)
 
+def generate_synthetic_latent_and_mask(img, mask, background_path):
+    low_or_high = random.choice([0, 1])
+    gamma_value = random.uniform(0.3, 0.7) if low_or_high == 0 else random.uniform(3.0, 4.0)
+    noise_level = random.uniform(0.1, 0.3)
+    blur_size = random.choice([num for num in range(3, 5) if num % 2 != 0])
+    downsample = random.choice([num for num in range(2, 4)])
+
+    degradation_block = [
+        partial(vary_ridge_thickness),
+        partial(gamma, value=gamma_value),
+        partial(gaussian_blur, kernel_size=blur_size),
+        partial(gaussian_noise_speckle, noise_level=noise_level),
+        partial(add_background_image)
+    ]
+
+    out = img.copy()
+    out_mask = mask.copy()
+
+    for d in degradation_block:
+        out = d(out)
+        out_mask = d(out_mask)
+
+
+    return out.astype(int), out_mask.astype(int)
+
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument("list", type=str, help="List with all fingerprint reference images (.tif, .png, .bmp, .wsq, .jpg)")
@@ -249,14 +274,14 @@ def process_image(args):
         mask = np.array(Image.open(mask_file).convert('L')) > 127  # binariza
 
         for j in range(num_synthetic):
-            occ_mask = random_occlusions(mask)
+            # occ_mask = random_occlusions(mask)
             # img = np.where(new_mask == 0, img.max(), img)
-            out = generate_synthetic_latent(img, background_path)
+            out, out_mask = generate_synthetic_latent_and_mask(img, mask, background_path)
             filename = os.path.join(output_dir, basename.replace('.png', f'_aug{j}.png'))
             cv2.imwrite(filename, out.astype(np.uint8))
             
             mask_filename = os.path.join(mask_out_dir, basename.replace('.png', f'_aug{j}.png'))
-            cv2.imwrite(mask_filename, occ_mask*255)
+            cv2.imwrite(mask_filename, out_mask*255)
     except Exception as e:
         print("Failed for image ", basename, "Error: ", e)
 
