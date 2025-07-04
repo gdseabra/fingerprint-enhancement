@@ -92,10 +92,11 @@ def resize_or_pad_background(background, image):
 
     return background
 
-def add_background_image(img):
-    
-
-    background_image = np.array(Image.open(random.choice(background_list)))
+def add_background_image(img, background_img=None):
+    if background_img is not None:
+        background_image = background_img
+    else:
+        background_image = np.array(Image.open(random.choice(background_list)))
 
     # print('Background shape:', bg_shape)
     # print('Image shape:', img.shape)
@@ -156,13 +157,20 @@ def generate_synthetic_latent_and_mask(img, mask, background_path):
     noise_level = random.uniform(0.1, 0.3)
     blur_size = random.choice([num for num in range(3, 5) if num % 2 != 0])
     downsample = random.choice([num for num in range(2, 4)])
+    bg_img = np.array(Image.open(random.choice(background_list)))
 
     degradation_block = [
         partial(vary_ridge_thickness),
         partial(gamma, value=gamma_value),
         partial(gaussian_blur, kernel_size=blur_size),
         partial(gaussian_noise_speckle, noise_level=noise_level),
-        partial(add_background_image)
+        partial(add_background_image, background_img=bg_img)
+    ]
+
+    mask_degradation_block = [
+        partial(gamma, value=gamma_value),
+        partial(gaussian_noise_speckle, noise_level=noise_level),
+        partial(add_background_image, background_img=bg_img)
     ]
 
     out = img.copy()
@@ -170,7 +178,11 @@ def generate_synthetic_latent_and_mask(img, mask, background_path):
 
     for d in degradation_block:
         out = d(out)
+    
+    for d in mask_degradation_block:
         out_mask = d(out_mask)
+
+    out_mask = np.where(out_mask > out_mask.mean(), 1, 0)
 
 
     return out.astype(int), out_mask.astype(int)
@@ -272,6 +284,7 @@ def process_image(args):
         basename = os.path.basename(image_path)
         mask_file = os.path.join(mask_path, basename)
         mask = np.array(Image.open(mask_file).convert('L')) > 127  # binariza
+        mask = mask.astype(np.uint8)
 
         for j in range(num_synthetic):
             # occ_mask = random_occlusions(mask)
