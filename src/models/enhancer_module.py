@@ -222,20 +222,20 @@ class EnhancerLitModule(LightningModule):
 
         true_orig   = y[:,0,:,:]
         true_bin    = y[:,1,:,:]
-        mask        = y[:,2,:,:]
-        occ_mask    = y[:,3,:,:]
+        # mask        = y[:,2,:,:]
+        # occ_mask    = y[:,3,:,:]
 
 
-        masked_bce_criterion = MaskedBCELoss()
-        masked_mse_criterion = MaskedMSELoss()
+        # masked_bce_criterion = MaskedBCELoss()
+        # masked_mse_criterion = MaskedMSELoss()
         
-        foreground_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, mask*occ_mask)+0.5*masked_mse_criterion(pred_orig, true_orig, mask*occ_mask)
-        background_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-mask))
-        occlusion_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-occ_mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-occ_mask))
+        # foreground_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, mask*occ_mask)+0.5*masked_mse_criterion(pred_orig, true_orig, mask*occ_mask)
+        # background_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-mask))
+        # occlusion_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-occ_mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-occ_mask))
 
-        w_occ, w_fg, w_bg = (0.1, 0.45, 0.45)
+        # w_occ, w_fg, w_bg = (0.0, 0.5, 0.5)
 
-        total_loss = w_occ*occlusion_loss + w_fg*foreground_loss + w_bg*background_loss 
+        # total_loss = w_occ*occlusion_loss + w_fg*foreground_loss + w_bg*background_loss 
 
         # seg_loss_weight = 0.2
         
@@ -263,7 +263,7 @@ class EnhancerLitModule(LightningModule):
         # # Total loss ponderada de segmentação
         # total_loss = (1 - seg_loss_weight)* (0.5 * mse_loss_ridge + 0.5 * bce_loss_ridge) + seg_loss_weight*(0.5 * mse_loss_seg + 0.5 * bce_loss_seg)
 
-        # total_loss = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
+        total_loss = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
         
 
         # assert(2==1)

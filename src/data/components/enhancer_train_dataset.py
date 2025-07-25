@@ -56,8 +56,8 @@ class EnhancerTrainDataset(Dataset):
 
     def __getitem__(self, ix):
         lat   = Image.open(self.data_dir+self.lat_subdir+self.data[ix]+self.lat_suffix)
-        # mask_lat  = Image.open(self.data_dir + self.mask_subdir  + self.data[ix] + self.mask_suffix)
-        occ_mask  = Image.open(self.data_dir + self.occ_mask_subdir  + self.data[ix] + self.mask_suffix)
+        mask_lat  = Image.open(self.data_dir + self.mask_subdir  + self.data[ix] + self.mask_suffix)
+        # occ_mask  = Image.open(self.data_dir + self.occ_mask_subdir  + self.data[ix] + self.mask_suffix)
 
         try:
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.data[ix] + self.ref_suffix)
@@ -69,7 +69,7 @@ class EnhancerTrainDataset(Dataset):
         except FileNotFoundError: # especial case when are dealing with an synthetic augmented dataset
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.data[ix].split('_')[0] + self.ref_suffix)
             bin = Image.open(self.data_dir + self.bin_subdir + self.data[ix].split('_')[0] + self.bin_suffix)
-            mask_ref = Image.open(self.data_dir + self.mask_subdir + self.data[ix].split('_')[0] + self.mask_suffix)
+            # mask_ref = Image.open(self.data_dir + self.mask_subdir + self.data[ix].split('_')[0] + self.mask_suffix)
             # skel = Image.open(self.data_dir + self.skel_subdir + self.data[ix].split('_')[0] + self.skel_suffix)
             # mnt = Image.open(self.data_dir + self.mnt_subdir + self.data[ix].split('_')[0] + self.mnt_suffix)
 
@@ -94,8 +94,8 @@ class EnhancerTrainDataset(Dataset):
 
         # if self.skel_transform:
         bin = self.skel_transform(bin)
-        mask  = self.skel_transform(mask_ref)
-        occ_mask  = self.skel_transform(occ_mask)
+        mask  = self.skel_transform(mask_lat)
+        # occ_mask  = self.skel_transform(occ_mask)
             # mnt = self.skel_transform(mnt)
 
         ref_white = ref.max()
@@ -106,9 +106,9 @@ class EnhancerTrainDataset(Dataset):
         bin = torch.where(mask == 0, bin_white, bin)
         
         # apply occlusions to train input latent
-        lat = torch.where(occ_mask == 0, lat_white, lat)
+        # lat = torch.where(occ_mask == 0, lat_white, lat)
 
-        return lat, torch.concat([ref, bin, mask, occ_mask], axis=0)
+        return lat, torch.concat([ref, bin, mask], axis=0)
 
     def __len__(self):
         return len(self.data)

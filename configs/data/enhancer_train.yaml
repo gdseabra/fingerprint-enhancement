@@ -2,12 +2,12 @@ _target_: src.data.enhancer_train_datamodule.EnhancerTrainDataModule
 data_dir: ${paths.data_dir}/
 data_list: /occlusions/lat_list.txt
 # lat_subdir: /synth_lat_nfiq80/
-lat_subdir: /occlusions/synth_lats/
+lat_subdir: /gt_masks/synth_lats/
 ref_subdir: /ref_NFIQ80/
 skel_subdir: /ref_skel/
 bin_subdir: /ref_bin/
 # mask_subdir: /synth_lat_nfiq80_masks/0/
-mask_subdir: /masks_orig/
+mask_subdir: /gt_masks/synth_masks/
 occ_mask_subdir: /occlusions/occ_masks/
 mnt_subdir: /mnts_ref_fusion/
 apply_mask: 1
