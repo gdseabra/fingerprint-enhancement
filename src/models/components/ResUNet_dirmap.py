@@ -296,7 +296,7 @@ class Decoder(nn.Module):
         return x
 
 
-class ResUNet(nn.Module):
+class ResUNet_dirmap(nn.Module):
     """UNet model.
 
     It follows the architecture proposed in [1]_. Some modifications were made to the
@@ -347,7 +347,7 @@ class ResUNet(nn.Module):
         dec_chs = list(reversed(chs)) + [out_ch]
         self.encoder = Encoder(enc_chs, ndim)
         self.decoder = Decoder(dec_chs[:-1], ndim)
-        self.head = conv_nd(dec_chs[-2], out_ch, 1, ndim)
+        self.head = conv_nd(dec_chs[-2], out_ch, 1, ndim, stride=2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the UNet model.
@@ -365,12 +365,15 @@ class ResUNet(nn.Module):
         z = self.encoder(x)
         z = self.decoder(z[-1], z[:-1][::-1])
         z = self.head(z)
-        z = z + x[:, -1, :, :].unsqueeze(1)
+        z = F.interpolate(z, scale_factor=1/4, mode="bilinear")
+        x_downsampled = F.interpolate(x, scale_factor=1/8, mode="bilinear")
+        z = z + x_downsampled
+
         return z
 
 
 if __name__ == '__main__':
-    model         = ResUNet(in_ch=1)
+    model         = ResUNet_dirmap(in_ch=1)
 
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)

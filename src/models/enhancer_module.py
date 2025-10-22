@@ -99,6 +99,49 @@ class MaskedMSELoss(nn.Module):
 
         return foreground_loss
 
+def circular_smooth_labels(true_idx, num_classes=90, sigma=1.5):
+    """
+    true_idx: (B, H, W) integer tensor of ground truth classes
+    returns: (B, num_classes, H, W) smoothed probability tensor
+    """
+    device = true_idx.device
+    B, H, W = true_idx.shape
+    classes = torch.arange(num_classes, device=device).view(1, num_classes, 1, 1)
+
+    # Expand true_idx to match shape
+    true_idx_exp = true_idx.unsqueeze(1)
+
+    # Circular distance between each class and ground truth
+    diff = torch.abs(classes - true_idx_exp)
+    diff = torch.minimum(diff, num_classes - diff)  # wrap-around distance
+
+    # Gaussian weighting
+    weights = torch.exp(-0.5 * (diff.float() / sigma) ** 2)
+    weights = weights / weights.sum(dim=1, keepdim=True)
+
+    return weights
+
+
+def circular_cross_entropy(pred_logits, true_idx, num_classes=90, sigma=1.5):
+    # pred_logits: (B, num_classes, H, W)
+    # true_idx: (B, H, W)
+    # soft_targets = circular_smooth_labels(true_idx, num_classes, sigma)  # (B, C, H, W)
+    # Initialize cross-entropy loss (no label smoothing here, we provide soft labels directly)
+
+    # Initialize class weights: class 90 has 10x higher weight
+    # class_w = torch.ones(num_classes, device=pred_logits.device, dtype=pred_logits.dtype)
+    # class_w[90] = 1.0
+
+    # Cross-entropy with class weighting
+    criterion = nn.CrossEntropyLoss(ignore_index=90)
+
+    # criterion expects soft_targets float tensor of shape (B, C, H, W)
+    # ⚠️ NOTE: As of PyTorch ≥ 1.10, CrossEntropyLoss accepts soft labels directly.
+    # loss = criterion(pred_logits, soft_targets)
+    loss = criterion(pred_logits, true_idx)
+    return loss
+
+
 
 class EnhancerLitModule(LightningModule):
     """
@@ -142,6 +185,7 @@ class EnhancerLitModule(LightningModule):
         patch_size: Tuple[int, int] = (128, 128),
         use_patches: bool = False,
         stride: int = 8,
+        warmup_epochs_dirmap: int = 2
 
     ) -> None:
         """Initialize a `EnhancerLitModule`.
@@ -163,6 +207,8 @@ class EnhancerLitModule(LightningModule):
 
         self.mse_criterion = torch.nn.functional.mse_loss
         self.bce_criterion = torch.nn.functional.binary_cross_entropy_with_logits
+
+        self.ce_criterion = torch.nn.functional.cross_entropy
 
 
         self.patch_size = patch_size
@@ -213,67 +259,38 @@ class EnhancerLitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        x, y = batch
-        yhat = self.forward(x)
+        x, y_dirmap, y_orig, y_bin = batch
+        pred_dirmap, pred_enh = self.forward(x)
 
-        pred_orig  = yhat[:,0,:,:]
-        pred_bin = yhat[:,1,:,:]
-
-
-        true_orig   = y[:,0,:,:]
-        true_bin    = y[:,1,:,:]
-        # mask        = y[:,2,:,:]
-        # occ_mask    = y[:,3,:,:]
+        pred_orig  = pred_enh[:,0,:,:]
+        pred_bin = pred_enh[:,1,:,:]
 
 
-        # masked_bce_criterion = MaskedBCELoss()
-        # masked_mse_criterion = MaskedMSELoss()
-        
-        # foreground_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, mask*occ_mask)+0.5*masked_mse_criterion(pred_orig, true_orig, mask*occ_mask)
-        # background_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-mask))
-        # occlusion_loss = 0.5*masked_bce_criterion(pred_bin, true_bin, (1-occ_mask)) + 0.5*masked_mse_criterion(pred_orig, true_orig, (1-occ_mask))
+        true_orig   = y_orig[:, 0, :, :]
+        true_bin    = y_bin[:, 0, :, :]
 
-        # w_occ, w_fg, w_bg = (0.0, 0.5, 0.5)
+        # Assume y has shape (B, 91, H, W)
+        true_dirmap = F.interpolate(y_dirmap, size=true_bin.shape[1:], mode="bilinear", align_corners=False)  # -> (B, 90, H, W)
 
-        # total_loss = w_occ*occlusion_loss + w_fg*foreground_loss + w_bg*background_loss 
+        true_dirmap_idx = true_dirmap.argmax(dim=1)  # -> (B, H, W)
 
-        # seg_loss_weight = 0.2
-        
-        # # MSE Loss com máscara
-        # mse_loss_ridge = F.mse_loss(pred_orig * mask, true_orig * mask, reduction='sum')
-        # mse_loss_ridge = mse_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+        # true_seg = 1 - y[:, 90, :, :]  # -> (B, H, W)
+        # pred_seg = pred_seg.squeeze(1)  # (B, 1, H, W) -> (B, H, W)
 
-        # # BCE Loss com máscara
-        # bce_loss_ridge = F.binary_cross_entropy_with_logits(
-        #     pred_bin, true_bin, weight=mask, reduction='sum'
-        # )
-        # bce_loss_ridge = bce_loss_ridge / (mask.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
 
-        # mask_seg = 1 - mask
-        # # MSE Loss de segmentação
-        # mse_loss_seg = F.mse_loss(pred_orig * mask_seg, true_orig * mask_seg, reduction='sum')
-        # mse_loss_seg = mse_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+        enh_loss = (0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin))
 
-        # # BCE Loss de segmentação
-        # bce_loss_seg = F.binary_cross_entropy_with_logits(
-        #     pred_bin, true_bin, weight=mask_seg, reduction='sum'
-        # )
-        # bce_loss_seg = bce_loss_seg / (mask_seg.sum() + 1e-8)  # média apenas nos pixels com máscara = 1
+        # total_loss = self.bce_criterion(pred_dirmap, true_dirmap)
 
-        # # Total loss ponderada de segmentação
-        # total_loss = (1 - seg_loss_weight)* (0.5 * mse_loss_ridge + 0.5 * bce_loss_ridge) + seg_loss_weight*(0.5 * mse_loss_seg + 0.5 * bce_loss_seg)
+        ori_loss = circular_cross_entropy(pred_dirmap, true_dirmap_idx, sigma=1.5)
 
-        total_loss = 0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin)
-        
 
-        # assert(2==1)
+        total_loss = ori_loss + enh_loss
 
         # loss = (self.criterion(pred_bin, true_bin) + dice_loss(F.sigmoid(pred_bin), true_bin, multiclass=False))
         # loss += 0.5 * self.mse_criterion(pred_orig, true_orig)
         # loss = self.mse_criterion(yhat, y_skel,  torch.ones_like(y_skel))
 
-        data  = batch[0]
-        names = batch[1]
 
         # for i, name in enumerate(names):
         #     mnt = mnt_map[i, :, :]
@@ -307,6 +324,23 @@ class EnhancerLitModule(LightningModule):
 
         # return loss or backpropagation will fail
         return loss
+    
+    def on_train_epoch_start(self):
+        """
+        Hook executado no início de cada época de treinamento.
+        Ideal para congelar/descongelar camadas.
+        """
+        # FASE 1: Aquecimento da dirmap_net
+        if self.current_epoch < self.hparams.warmup_epochs_dirmap:
+            # Garante que apenas dirmap_net seja treinável
+            self.net.dirmap_net.requires_grad_(True)
+            self.net.enhancer_net.requires_grad_(False)
+        
+        # TRANSIÇÃO: Descongela a enhancer_net para começar a treinar
+        elif self.current_epoch == self.hparams.warmup_epochs_dirmap:
+            print(f"\nÉpoca {self.current_epoch}: Fim do aquecimento. Treinando o modelo completo!\n")
+            self.net.dirmap_net.requires_grad_(True)
+            self.net.enhancer_net.requires_grad_(True)
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
@@ -394,6 +428,50 @@ class EnhancerLitModule(LightningModule):
             }
         return {"optimizer": optimizer}
 
+    def save_orientation_field(self, output_tensor: torch.Tensor, mask:np.ndarray, png_path: str, dir_path: str):
+        """
+        Save the orientation field from a 90-channel output tensor to a .png image and .dir text file.
+
+        Parameters
+        ----------
+        output_tensor : torch.Tensor
+            Tensor of shape [1, 90, H, W] with probabilities or responses per angle.
+        png_path : str
+            Path to save the .png image.
+        dir_path : str
+            Path to save the .dir text file.
+        """
+        # Ensure tensor is detached and on CPU
+        output = output_tensor.cpu().squeeze(0)  # -> [90, H, W]
+        assert output.shape[0] == 90, "Output must have 91 channels"
+
+        # Find channel with maximum response per pixel
+        max_indices = torch.argmax(output, dim=0).numpy()  # -> [H, W]
+
+        # Convert channel indices to angles (0°, 2°, ..., 178°)
+        angles = max_indices * 2  # [H, W] int
+
+        # Map 180° to -1 for background
+        background = -np.ones_like(angles)
+
+        if mask != None:
+            angles = np.where(mask == 0, background, angles)
+
+        H, W = angles.shape
+
+        # --- Save PNG using PIL ---
+        # Scale angles (0..178) → (0..255) for visualization
+        img_array = (angles.astype(np.float32) * (255.0 / 178.0)).astype(np.uint8)
+        img = Image.fromarray(img_array, mode="L")
+        img.save(png_path)
+
+        # --- Save .dir file with multiple columns per line ---
+        with open(dir_path, "w") as f:
+            f.write(f"{W} {H}\n")  # width and height
+            for y in range(H):
+                row_values = " ".join(str(angles[y, x]) for x in range(W))
+                f.write(row_values + "\n")
+
     def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single prediction step on a batch of data from the test set.
 
@@ -420,8 +498,20 @@ class EnhancerLitModule(LightningModule):
         if not os.path.exists(enh_path):
             os.makedirs(enh_path)
 
+        dirmap_path = os.path.join(self.output_path, "dirmap")
+        if not os.path.exists(dirmap_path):
+            os.makedirs(dirmap_path)
+
+        dirmap_png_path = os.path.join(self.output_path, "dirmap_png")
+        if not os.path.exists(dirmap_png_path):
+            os.makedirs(dirmap_png_path)
+
+        seg_path = os.path.join(self.output_path, "mask")
+        if not os.path.exists(seg_path):
+            os.makedirs(seg_path)
+
         if not self.use_patches:
-            latent_en = self.forward(x)
+            dirmap_pred, latent_enh = self.forward(x)
         else:
             shape_latent = data.shape
             ROW = shape_latent[2]
@@ -436,16 +526,16 @@ class EnhancerLitModule(LightningModule):
 
             patch_ind = 0
 
-            latent_en = torch.zeros((data.shape[0], 2, data.shape[2], data.shape[3]), device=x.device)
+            latent_enh = torch.zeros((data.shape[0], 2, data.shape[2], data.shape[3]), device=x.device)
             
             for row_ind in row_list:
                 for col_ind in col_list:
                     patch_pred = self.forward(data[:,:,(row_ind-self.input_row):row_ind,(col_ind-self.input_col):col_ind])
-                    latent_en[:,:,(row_ind-self.input_row):row_ind, (col_ind-self.input_col):col_ind] += patch_pred
+                    latent_enh[:,:,(row_ind-self.input_row):row_ind, (col_ind-self.input_col):col_ind] += patch_pred
 
         for i, name in enumerate(names):
-            gabor   = latent_en[i, 1, :, :]
-            orig    = latent_en[i, 0, :, :]
+            gabor   = latent_enh[i, 1, :, :]
+            orig    = latent_enh[i, 0, :, :]
 
             bin   = torch.nn.functional.sigmoid(gabor)
             bin   = torch.round(bin)
@@ -466,6 +556,31 @@ class EnhancerLitModule(LightningModule):
 
             orig = Image.fromarray(orig)
             orig.save(enh_path + '/' + name + '.png')
+
+            dirmap   = dirmap_pred[i, :, :, :]
+            dirmap   = torch.nn.functional.sigmoid(dirmap)
+
+            # mask    = seg_pred[i, 0, :, :]
+            # mask = torch.nn.functional.sigmoid(mask)
+            # mask = torch.round(mask)
+            # mask = mask.cpu().numpy()
+            
+            self.save_orientation_field(dirmap, None, f"{dirmap_png_path}/{name}.png", f"{dirmap_path}/{name}.dir")
+
+
+            # bin   = torch.nn.functional.sigmoid(gabor)
+            # bin   = torch.round(bin)
+
+            # gabor = gabor.cpu().numpy()
+            # bin   = bin.cpu().numpy()
+            # orig  = orig.cpu().numpy()
+
+            # gabor = (255 * (gabor - np.min(gabor))/(np.max(gabor) - np.min(gabor))).astype('uint8')
+            # bin   = (255 * (bin - np.min(bin))/(np.max(bin) - np.min(bin))).astype('uint8')
+
+            # mask = (255 * (mask - np.min(mask))/(np.max(mask) - np.min(mask))).astype('uint8')
+            # mask_img = Image.fromarray(mask)
+            # mask_img.save(seg_path + '/' + name + '.png')
 
 
 

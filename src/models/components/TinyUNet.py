@@ -107,7 +107,7 @@ class TinyUNet(nn.Module):
     in_channels: The number of input channels
     num_classes: The number of segmentation classes
     '''
-    def __init__(self, in_ch=3, out_ch=1, ndim=2, chs: tuple[int, ...] = (64, 128, 256, 512, 1024)):
+    def __init__(self, in_ch=1, out_ch=90, ndim=2, chs: tuple[int, ...] = (64, 128, 256, 512, 1024)):
         super(TinyUNet, self).__init__()
         in_filters      = [192, 384, 768, 1024]
         out_filters     = [64, 128, 256, 512]
@@ -120,7 +120,7 @@ class TinyUNet(nn.Module):
         self.decoder3   = UNetDecoder(in_filters[2], out_filters[2])
         self.decoder2   = UNetDecoder(in_filters[1], out_filters[1])
         self.decoder1   = UNetDecoder(in_filters[0], out_filters[0])
-        self.final_conv = nn.Conv2d(out_filters[0], out_ch, kernel_size=1)
+        self.final_conv = nn.Conv2d(out_filters[0], out_ch, kernel_size=1, stride=2)
         
     def forward(self, x):
         x, skip1 = self.encoder1(x)
@@ -133,7 +133,8 @@ class TinyUNet(nn.Module):
         x        = self.decoder2(x, skip2)
         x        = self.decoder1(x, skip1)
         x        = self.final_conv(x)
-        return x
+        down = F.interpolate(x, scale_factor=0.25, mode='bilinear')
+        return down
 
 
 if __name__ == '__main__':

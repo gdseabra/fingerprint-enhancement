@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.transforms import transforms
 
-from data.components.enhancer_train_dataset import EnhancerTrainDataset, PatchEnhancerTrainDataset
+from data.components.enhancer_train_dataset import EnhancerTrainDataset #, PatchEnhancerTrainDataset
 
 
 class EnhancerTrainDataModule(L.LightningDataModule):
@@ -19,7 +19,9 @@ class EnhancerTrainDataModule(L.LightningDataModule):
         occ_mask_subdir: str = '/occ_masks/',
         bin_subdir: str = '/bin/',
         mnt_subdir: str = '/mnt/',
-        apply_mask: int = 0,
+        orient_subdir: str = '/orient/', 
+        apply_mask: bool = True,
+        use_ref_mask: bool = False,
         data_list: str = None,
         batch_size: int = 64,
         train_val_split: Tuple[float, float] = (0.7, 0.3),
@@ -67,10 +69,11 @@ class EnhancerTrainDataModule(L.LightningDataModule):
                                                   ref_subdir=self.hparams.ref_subdir, 
                                                   skel_subdir=self.hparams.skel_subdir,
                                                   bin_subdir=self.hparams.bin_subdir,
-                                                  occ_mask_subdir=self.hparams.occ_mask_subdir,
                                                   mask_subdir=self.hparams.mask_subdir,
                                                   mnt_subdir=self.hparams.mnt_subdir,
-                                                  apply_mask =self.hparams.apply_mask
+                                                  orient_subdir=self.hparams.orient_subdir,
+                                                  apply_mask =self.hparams.apply_mask,
+                                                  use_ref_mask=self.hparams.use_ref_mask
                                                   )
 
             self.data_train, self.data_val = random_split(

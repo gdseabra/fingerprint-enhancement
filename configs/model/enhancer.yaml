@@ -14,15 +14,18 @@ scheduler:
   patience: 2
 
 net:
-  _target_: src.models.components.ResUNet.ResUNet
-  # _target_: src.models.components.TinyResUNet.TinyResUNet
-  in_ch: 1
+  _target_: src.models.components.MultiTaskDirMapEnh.MultiTaskDirMapEnh
+  # _target_: src.models.components.UNet.UNet
+  # in_ch: 1
   ndim: 2
-  out_ch: 2
+  # out_ch: 90
 
 # compile model for faster training with pytorch 2.0
 compile: false
 
-output_path: /home/gabriel/fingerprint-enhancement/output/
+# output_path: /storage/seabra/segmentation_study/test_data/tse1k/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
+# output_path: /storage/seabra/segmentation_study/test_data/basen_400/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
+# output_path: /storage/seabra/segmentation_study/test_data/sd27/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
+output_path: /storage/seabra/sd27_test/multitask_enh_dirmap_v2_w_1_1/
 
 use_patches: false
