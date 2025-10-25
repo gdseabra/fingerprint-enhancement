@@ -3,6 +3,71 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchsummary import summary
 
+import torch
+import torch.nn as nn
+import numpy as np
+import cv2
+
+def generate_gabor_kernels(num_orientations, ksize, sigma, lambd, gamma=0.5):
+    """
+    Generates a stack of Gabor filter kernels.
+
+    Args:
+        num_orientations (int): Number of orientations (e.g., 90).
+        ksize (int): The size of the Gabor kernel (e.g., 31).
+        sigma (float): Standard deviation of the Gaussian envelope.
+        lambd (float): Wavelength of the sinusoidal factor.
+        gamma (float): Spatial aspect ratio.
+
+    Returns:
+        torch.Tensor: A tensor of shape (num_orientations, 1, ksize, ksize)
+                      containing the Gabor kernels.
+    """
+    kernels = []
+    # Orientations from 0 to 178 degrees, matching your U-Net output
+    for i in range(num_orientations):
+        theta = i * np.pi / num_orientations # Angle in radians
+        kernel = cv2.getGaborKernel(
+            (ksize, ksize), 
+            sigma, 
+            theta, 
+            lambd, 
+            gamma, 
+            psi=0, # Phase offset, 0 and pi/2 are common
+            ktype=cv2.CV_32F
+        )
+        # Add a channel dimension for PyTorch compatibility
+        kernels.append(kernel)
+    
+    # Stack kernels into a single tensor
+    gabor_kernels = np.stack(kernels, axis=0)
+    # Add the 'in_channels' dimension
+    gabor_kernels = torch.from_numpy(gabor_kernels).unsqueeze(1)
+    
+    return gabor_kernels
+
+class GaborConvLayer(nn.Module):
+    def __init__(self, num_orientations=90, ksize=31, sigma=4.0, lambd=10.0):
+        super(GaborConvLayer, self).__init__()
+        
+        # Generate the fixed Gabor kernels
+        gabor_weights = generate_gabor_kernels(num_orientations, ksize, sigma, lambd)
+        
+        # Create a non-trainable Conv2d layer
+        self.conv = nn.Conv2d(
+            in_channels=1, 
+            out_channels=num_orientations, 
+            kernel_size=ksize, 
+            padding='same', # Preserves input spatial dimensions
+            bias=False
+        )
+        
+        # Assign the fixed Gabor weights and make them non-trainable
+        self.conv.weight = nn.Parameter(gabor_weights, requires_grad=False)
+
+    def forward(self, x):
+        # Apply the convolution
+        return self.conv(x)
 
 class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""

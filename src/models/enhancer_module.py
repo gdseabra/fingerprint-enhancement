@@ -260,7 +260,7 @@ class EnhancerLitModule(LightningModule):
             - A tensor of target labels.
         """
         x, y_dirmap, y_orig, y_bin = batch
-        pred_dirmap, pred_enh = self.forward(x)
+        pred_enh = self.forward(x)
 
         pred_orig  = pred_enh[:,0,:,:]
         pred_bin = pred_enh[:,1,:,:]
@@ -268,11 +268,6 @@ class EnhancerLitModule(LightningModule):
 
         true_orig   = y_orig[:, 0, :, :]
         true_bin    = y_bin[:, 0, :, :]
-
-        # Assume y has shape (B, 91, H, W)
-        true_dirmap = F.interpolate(y_dirmap, size=true_bin.shape[1:], mode="bilinear", align_corners=False)  # -> (B, 90, H, W)
-
-        true_dirmap_idx = true_dirmap.argmax(dim=1)  # -> (B, H, W)
 
         # true_seg = 1 - y[:, 90, :, :]  # -> (B, H, W)
         # pred_seg = pred_seg.squeeze(1)  # (B, 1, H, W) -> (B, H, W)
@@ -282,10 +277,7 @@ class EnhancerLitModule(LightningModule):
 
         # total_loss = self.bce_criterion(pred_dirmap, true_dirmap)
 
-        ori_loss = circular_cross_entropy(pred_dirmap, true_dirmap_idx, sigma=1.5)
-
-
-        total_loss = ori_loss + enh_loss
+        total_loss = enh_loss
 
         # loss = (self.criterion(pred_bin, true_bin) + dice_loss(F.sigmoid(pred_bin), true_bin, multiclass=False))
         # loss += 0.5 * self.mse_criterion(pred_orig, true_orig)
@@ -330,17 +322,7 @@ class EnhancerLitModule(LightningModule):
         Hook executado no início de cada época de treinamento.
         Ideal para congelar/descongelar camadas.
         """
-        # FASE 1: Aquecimento da dirmap_net
-        if self.current_epoch < self.hparams.warmup_epochs_dirmap:
-            # Garante que apenas dirmap_net seja treinável
-            self.net.dirmap_net.requires_grad_(True)
-            self.net.enhancer_net.requires_grad_(False)
-        
-        # TRANSIÇÃO: Descongela a enhancer_net para começar a treinar
-        elif self.current_epoch == self.hparams.warmup_epochs_dirmap:
-            print(f"\nÉpoca {self.current_epoch}: Fim do aquecimento. Treinando o modelo completo!\n")
-            self.net.dirmap_net.requires_grad_(True)
-            self.net.enhancer_net.requires_grad_(True)
+        pass
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
@@ -511,7 +493,8 @@ class EnhancerLitModule(LightningModule):
             os.makedirs(seg_path)
 
         if not self.use_patches:
-            dirmap_pred, latent_enh = self.forward(x)
+            # dirmap_pred, latent_enh = self.forward(x)
+            latent_enh = self.forward(x)
         else:
             shape_latent = data.shape
             ROW = shape_latent[2]
@@ -537,8 +520,8 @@ class EnhancerLitModule(LightningModule):
             gabor   = latent_enh[i, 1, :, :]
             orig    = latent_enh[i, 0, :, :]
 
-            bin   = torch.nn.functional.sigmoid(gabor)
-            bin   = torch.round(bin)
+            gabor   = torch.nn.functional.sigmoid(gabor)
+            bin   = torch.round(gabor)
 
             gabor = gabor.cpu().numpy()
             bin   = bin.cpu().numpy()
@@ -557,15 +540,11 @@ class EnhancerLitModule(LightningModule):
             orig = Image.fromarray(orig)
             orig.save(enh_path + '/' + name + '.png')
 
-            dirmap   = dirmap_pred[i, :, :, :]
-            dirmap   = torch.nn.functional.sigmoid(dirmap)
+            # dirmap   = dirmap_pred[i, :, :, :]
+            # dirmap   = torch.nn.functional.sigmoid(dirmap)
 
-            # mask    = seg_pred[i, 0, :, :]
-            # mask = torch.nn.functional.sigmoid(mask)
-            # mask = torch.round(mask)
-            # mask = mask.cpu().numpy()
             
-            self.save_orientation_field(dirmap, None, f"{dirmap_png_path}/{name}.png", f"{dirmap_path}/{name}.dir")
+            # self.save_orientation_field(dirmap, None, f"{dirmap_png_path}/{name}.png", f"{dirmap_path}/{name}.dir")
 
 
             # bin   = torch.nn.functional.sigmoid(gabor)

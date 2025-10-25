@@ -189,7 +189,7 @@ class ResnetBlock(nn.Module):
 
         h = self.block2(h)
 
-        return h + self.res_conv(x)
+        return (h + self.res_conv(x))
 
 
 class Encoder(nn.Module):
@@ -365,7 +365,7 @@ class ResUNet(nn.Module):
         z = self.encoder(x)
         z = self.decoder(z[-1], z[:-1][::-1])
         z = self.head(z)
-        z = z + x[:, -1, :, :].unsqueeze(1)
+        z = z + x
         return z
 
 

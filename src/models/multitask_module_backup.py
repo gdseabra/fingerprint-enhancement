@@ -1,61 +1,86 @@
+from typing import Any, Dict, Tuple, Callable
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import math
-import os
-import numpy as np
-from PIL import Image
-from typing import Callable, Tuple, Dict, Any
+from torch import Tensor
 from lightning import LightningModule
-from torchmetrics import MeanMetric
-from torchmetrics.aggregation import MinMetric
+from torchmetrics import MaxMetric, MeanMetric, MinMetric
+import numpy as np
+import os
+from PIL import Image
+import torch.nn.functional as F
 
-# ----------------------------------------------------------------------------
-# --- Definições das Novas Classes de Loss ---
-# ----------------------------------------------------------------------------
 
 class WeightedOrientationLoss(nn.Module):
-    def __init__(self, lambda_pos: float = 1.0, lambda_neg: float = 0.25):
+    """
+    Implements the weighted cross-entropy-like loss from the paper.
+    
+    This loss encourages the correct orientation channel to have a high probability
+    while penalizing high probabilities in incorrect channels.
+    
+    L_* = -1/|ROI| * sum_{ROI} sum_{i=1 to N} (lambda+ * p_l * log(p) + 
+                                               lambda- * (1-p_l) * log(1-p))
+    """
+    def __init__(self, lambda_pos: float = 1.0, lambda_neg: float = 1.0, epsilon: float = 1e-8):
+        """
+        Args:
+            lambda_pos (float): Weight for the positive samples (correct orientation).
+            lambda_neg (float): Weight for the negative samples (incorrect orientations).
+            epsilon (float): A small value to ensure numerical stability in log operations.
+        """
         super().__init__()
         self.lambda_pos = lambda_pos
         self.lambda_neg = lambda_neg
+        self.epsilon = epsilon
 
-    def forward(self, logits: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            logits (torch.Tensor): Raw output from the model (B, N, H, W).
-                                   DO NOT apply sigmoid beforehand.
-            target (torch.Tensor): Ground truth labels (B, 1, H, W).
-            mask (torch.Tensor): ROI mask (B, 1, H, W).
+            prediction (torch.Tensor): The model's output probability map.
+                                       Expected shape: (B, N, H, W), where N is the number of orientation bins.
+                                       Values should be probabilities (e.g., after a sigmoid).
+            target (torch.Tensor): The ground truth orientation map with integer labels.
+                                   Expected shape: (B, 1, H, W).
+            mask (torch.Tensor): The Region of Interest (ROI) mask. Loss is only computed where mask is 1.
+                                 Expected shape: (B, 1, H, W).
+                                 
+        Returns:
+            torch.Tensor: The computed scalar loss value.
         """
-        num_classes = logits.shape[1]
+        num_classes = prediction.shape[1]
         
-        # Create one-hot target
+        # Create one-hot encoded target from integer labels
+        # Shape: (B, 1, H, W) -> (B, H, W, N) -> (B, N, H, W)
         target_one_hot = F.one_hot(target.squeeze(1).long(), num_classes=num_classes)
         target_one_hot = target_one_hot.permute(0, 3, 1, 2).float()
 
-        # Use log_sigmoid for numerical stability
-        # log(p) = log(sigmoid(logits)) = log_sigmoid(logits)
-        log_p = F.logsigmoid(logits)
-        
-        # log(1-p) = log(1 - sigmoid(logits)) = log_sigmoid(-logits)
-        log_one_minus_p = F.logsigmoid(-logits)
+        # Ensure mask is broadcastable
+        # Shape: (B, 1, H, W)
+        mask = mask.float()
 
-        # Calculate weighted loss terms
+        # Calculate the log probabilities for both terms
+        log_p = torch.log(prediction + self.epsilon)
+        log_one_minus_p = torch.log(1 - prediction + self.epsilon)
+
+        # Calculate the positive and negative loss components
+        # (lambda+ * p_l * log(p))
         loss_pos = self.lambda_pos * target_one_hot * log_p
+        # (lambda- * (1-p_l) * log(1-p))
         loss_neg = self.lambda_neg * (1 - target_one_hot) * log_one_minus_p
         
+        # Combine the two loss components
         loss = -(loss_pos + loss_neg)
 
-        # Apply mask and normalize by the number of pixels in the ROI
-        mask = mask.float()
+        # Apply the ROI mask and calculate the mean loss per pixel in the ROI
         masked_loss = loss * mask
         
+        # Normalize by the number of pixels in the ROI
         num_roi_pixels = mask.sum()
         if num_roi_pixels > 0:
             total_loss = masked_loss.sum() / num_roi_pixels
         else:
-            total_loss = torch.tensor(0.0, device=logits.device)
+            # Avoid division by zero if mask is empty
+            total_loss = torch.tensor(0.0, device=prediction.device)
 
         return total_loss
 
@@ -63,77 +88,142 @@ class WeightedOrientationLoss(nn.Module):
 
 class OrientationCoherenceLoss(nn.Module):
     """
-    Implementa a loss de coerência de orientação (L_odpi) do artigo.
+    Implements the orientation coherence loss (L_odpi) from the paper.
+    
+    This loss enforces that orientation predictions in a local neighborhood
+    should be consistent or "coherent".
     
     L_odpi = |ROI| / (sum_{ROI} Coh) - 1
     
-    Onde Coh é o mapa de coerência calculado dos vetores de orientação preditos.
+    where Coh is the coherence map calculated from the predicted orientation vectors.
     """
     def __init__(self, N: int = 90, epsilon: float = 1e-8):
         """
         Args:
-            N (int): O número de ângulos de orientação discretos.
-            epsilon (float): Valor pequeno para estabilidade numérica.
+            N (int): The number of discrete orientation angles.
+            epsilon (float): A small value for numerical stability.
         """
         super().__init__()
         self.N = N
         self.epsilon = epsilon
 
-        # Pré-computa ângulos e o kernel 3x3 (J_3)
+        # Pre-compute angles and the 3x3 averaging kernel (J_3)
+        # These will be registered as buffers and moved to the correct device
+        # automatically with the module.
+        
+        # angle_i = floor(180/N) * i
         angle_step_deg = 180.0 / N
         angles_deg = torch.arange(N, dtype=torch.float32) * angle_step_deg
         
-        # A fórmula usa cos(2 * angulo) e sin(2 * angulo)
+        # The formula uses cos(2 * angle) and sin(2 * angle)
         angles_rad_doubled = torch.deg2rad(2 * angles_deg)
 
-        # Registra como 'parameter' (buffers não-treináveis)
+        # Reshape for broadcasting with the prediction tensor (B, N, H, W)
         self.cos_terms = nn.Parameter(torch.cos(angles_rad_doubled).view(1, N, 1, 1), requires_grad=False)
         self.sin_terms = nn.Parameter(torch.sin(angles_rad_doubled).view(1, N, 1, 1), requires_grad=False)
+        
+        # J_3 is an all-ones 3x3 matrix for convolution (averaging)
         self.j3_kernel = nn.Parameter(torch.ones((1, 1, 3, 3), dtype=torch.float32), requires_grad=False)
 
-    def forward(self, logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def forward(self, prediction: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            prediction (torch.Tensor): Mapa de probabilidade do modelo. (B, N, H, W).
-            mask (torch.Tensor): Máscara ROI. (B, 1, H, W).
+            prediction (torch.Tensor): The model's output probability map.
+                                       Expected shape: (B, N, H, W).
+            mask (torch.Tensor): The Region of Interest (ROI) mask.
+                                 Expected shape: (B, 1, H, W).
                                  
         Returns:
-            torch.Tensor: O valor escalar da loss.
+            torch.Tensor: The computed scalar loss value.
         """
-
-        prediction = torch.sigmoid(logits)
-        # --- 1. Computa o vetor de orientação médio d_bar ---
+        # --- 1. Compute the averaging ridge orientation vector d_bar ---
+        # d_bar_cos = (1/N) * sum(p_ori(i) * cos(2 * angle_i))
         d_bar_cos = torch.sum(prediction * self.cos_terms, dim=1, keepdim=True) / self.N
+        # d_bar_sin = (1/N) * sum(p_ori(i) * sin(2 * angle_i))
         d_bar_sin = torch.sum(prediction * self.sin_terms, dim=1, keepdim=True) / self.N
         
-        # --- 2. Calcula Coh = (d_bar * J_3) / (|d_bar| * J_3) ---
+        # --- 2. Calculate Coh = (d_bar * J_3) / (|d_bar| * J_3) ---
         
-        # Numerador: Convolui componentes do vetor e calcula magnitude do resultado
+        # Numerator: Convolve vector components and find magnitude of the result
+        # This averages the orientation vectors in a 3x3 neighborhood
         summed_d_cos = F.conv2d(d_bar_cos, self.j3_kernel, padding='same')
         summed_d_sin = F.conv2d(d_bar_sin, self.j3_kernel, padding='same')
         numerator = torch.sqrt(summed_d_cos**2 + summed_d_sin**2 + self.epsilon)
         
-        # Denominador: Calcula magnitude dos vetores, depois convolui (média)
+        # Denominator: Find magnitude of vectors, then convolve (average) them
         d_bar_mag = torch.sqrt(d_bar_cos**2 + d_bar_sin**2 + self.epsilon)
         denominator = F.conv2d(d_bar_mag, self.j3_kernel, padding='same')
         
         coh = numerator / (denominator + self.epsilon)
         
-        # --- 3. Computa a loss final L_odpi ---
+        # --- 3. Compute the final loss L_odpi ---
         mask = mask.float()
         roi_size = torch.sum(mask)
         
         if roi_size > 0:
+            # Sum coherence only over the ROI
             sum_coh_roi = torch.sum(coh * mask)
             loss = roi_size / (sum_coh_roi + self.epsilon) - 1.0
         else:
-            loss = torch.tensor(0.0, device=prediction.device, requires_grad=True)
+            loss = torch.tensor(0.0, device=prediction.device)
             
         return loss
 
-# ----------------------------------------------------------------------------
-# --- Módulo Lightning Atualizado ---
-# ----------------------------------------------------------------------------
+def dice_coeff(input: Tensor, target: Tensor, reduce_batch_first: bool = False, epsilon: float = 1e-6):
+    assert input.size() == target.size()
+    assert input.dim() == 3 or not reduce_batch_first
+    sum_dim = (-1, -2) if input.dim() == 2 or not reduce_batch_first else (-1, -2, -3)
+    inter = 2 * (input * target).sum(dim=sum_dim)
+    sets_sum = input.sum(dim=sum_dim) + target.sum(dim=sum_dim)
+    dice = (inter + epsilon) / (sets_sum + epsilon)
+    return dice.mean()
+
+def dice_loss(input: Tensor, target: Tensor, multiclass: bool = False):
+    fn = dice_coeff
+    return 1 - fn(input, target, reduce_batch_first=True)
+
+def bce_loss(pred, target, mask_label, mnt_label):
+    bce_criterion = nn.functional.l1_loss
+    image_loss = bce_criterion(pred, target, reduction = 'none')
+    minutia_weighted_map = mnt_label
+    image_loss *= minutia_weighted_map
+    return torch.mean(torch.sum(image_loss, dim=(1,2)))
+
+class MyCriterion(nn.Module):
+    def __init__(self): super().__init__()
+    def forward(self, input, target, pixel_weight, mask): return bce_loss(input, target, pixel_weight, mask)
+
+class MyWeightedL1Loss(nn.L1Loss):
+    def __init__(self, reduction='none'): super(MyWeightedL1Loss, self).__init__(reduction=reduction)
+    def forward(self, input, target): return super(MyWeightedL1Loss, self).forward(input, target).sum()/(loss.size(0))
+
+class MaskedBCELoss(nn.Module):
+    def __init__(self): super().__init__()
+    def forward(self, logits, targets, mask):
+        bce_loss = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+        foreground = mask.bool()
+        return bce_loss[foreground].mean() if foreground.any() else torch.tensor(0.0, device=logits.device)
+
+class MaskedMSELoss(nn.Module):
+    def __init__(self): super().__init__()
+    def forward(self, logits, targets, mask):
+        mse_loss = F.mse_loss(logits, targets, reduction='none')
+        foreground = mask.bool()
+        return mse_loss[foreground].mean() if foreground.any() else torch.tensor(0.0, device=logits.device)
+
+def circular_smooth_labels(true_idx, num_classes=90, sigma=1.5):
+    device, (B, H, W) = true_idx.device, true_idx.shape
+    classes = torch.arange(num_classes, device=device).view(1, num_classes, 1, 1)
+    true_idx_exp = true_idx.unsqueeze(1)
+    diff = torch.minimum(torch.abs(classes - true_idx_exp), num_classes - torch.abs(classes - true_idx_exp))
+    weights = torch.exp(-0.5 * (diff.float() / sigma) ** 2)
+    return weights / weights.sum(dim=1, keepdim=True)
+
+def circular_cross_entropy(pred_logits, true_idx, num_classes=90, sigma=1.5):
+    criterion = nn.CrossEntropyLoss(ignore_index=90)
+    return criterion(pred_logits, true_idx)
+# <-------------------------------------------------------------------------------------->
+
 
 class EnhancerLitModule(LightningModule):
     def __init__(
@@ -148,32 +238,20 @@ class EnhancerLitModule(LightningModule):
         patch_size: Tuple[int, int] = (128, 128),
         use_patches: bool = False,
         stride: int = 8,
-        warmup_epochs_dirmap: int = 2,
-        # --- NOVOS Hiperparâmetros para a Loss ---
-        w_ori: float = 1.0,         # Peso para a loss de orientação ponderada
-        w_coh: float = 0.5,         # Peso para a loss de coerência
-        lambda_pos: float = 1.0,    # Peso positivo para WeightedOrientationLoss
-        lambda_neg: float = 0.25,   # Peso negativo para WeightedOrientationLoss
-        N_ori: int = 90             # Número de classes de orientação
+        warmup_epochs_dirmap: int = 2
     ) -> None:
         super().__init__()
-        # Salva todos os HPs, incluindo os novos
-        self.save_hyperparameters(logger=False, ignore=["net"]) 
+        # 🔻 REMOVIDO: LRs não são mais parâmetros diretos.
+        # Elas estão dentro das configurações dos otimizadores.
+        self.save_hyperparameters(logger=False, ignore=["net"]) # Ignora a rede para não salvar o grafo no checkpoint
         self.net = net
 
+        # Esta linha informa ao Lightning para desativar seu     #
+        # loop de otimização padrão.                              #
         self.automatic_optimization = False
 
         self.mse_criterion = torch.nn.functional.mse_loss
         self.bce_criterion = torch.nn.functional.binary_cross_entropy_with_logits
-        
-        # --- NOVAS Funções de Loss ---
-        self.orientation_loss_fn = WeightedOrientationLoss(
-            lambda_pos=self.hparams.lambda_pos, 
-            lambda_neg=self.hparams.lambda_neg
-        )
-        self.coherence_loss_fn = OrientationCoherenceLoss(N=self.hparams.N_ori)
-        
-        # --- Métricas ---
         self.train_loss = MeanMetric()
         self.train_ori_loss = MeanMetric()
         self.train_enh_loss = MeanMetric()
@@ -182,14 +260,15 @@ class EnhancerLitModule(LightningModule):
         self.val_enh_loss = MeanMetric()
         self.test_loss = MeanMetric()
         self.val_loss_best = MinMetric()
-        
-        # --- Outros Atributos ---
         self.patch_size = patch_size
         self.use_patches = use_patches
         self.stride = stride
         self.output_path = output_path
 
 
+    # ... (forward, on_train_start, model_step, training_step, on_train_epoch_start,
+    #      validation_step, etc. permanecem EXATAMENTE os mesmos) ...
+    # <-------------------------------------------------------------------------------------->
     def forward(self, x: torch.Tensor) -> torch.Tensor: return self.net(x)
     
     def on_train_start(self) -> None:
@@ -197,56 +276,23 @@ class EnhancerLitModule(LightningModule):
 
     def model_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, torch.Tensor]:
         x, y_dirmap, y_orig, y_bin = batch
-        
-        # --- Forward ---
-        # pred_dirmap são os logits (B, 90, H, W)
         pred_dirmap, pred_enh = self.forward(x)
-        
-        # --- Preparar Predições ---
         pred_orig, pred_bin = pred_enh[:,0,:,:], pred_enh[:,1,:,:]
-        # Converte logits do dirmap para probabilidades (necessário para as novas losses)
-        # pred_dirmap_probs = torch.sigmoid(pred_dirmap)
-
-        # --- Preparar Targets ---
         true_orig, true_bin = y_orig[:, 0, :, :], y_bin[:, 0, :, :]
-        true_dirmap = F.interpolate(y_dirmap, size=true_bin.shape[1:], mode="bilinear", align_corners=False)
-        # Target labels (B, H, W)
-        true_dirmap_idx = true_dirmap.argmax(dim=1)
-
-        
-        # --- Preparar Inputs para Loss de Orientação ---
-        # Labels precisam ter dimensão de canal: (B, H, W) -> (B, 1, H, W)
-        true_dirmap_labels = true_dirmap_idx.unsqueeze(1)
-        # Usar 'true_dirmap_labels==90' como a máscara ROI: (B, H, W) -> (B, 1, H, W)
-        roi_mask = (true_dirmap_labels != 90).long()
-
-        # remove values de máscara
-        true_dirmap_labels[true_dirmap_labels == 90] = 0
-
-        # --- Calcular Losses ---
-        
-        # 1. Loss de Orientação (NOVA LÓGICA)
-        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap, true_dirmap_labels, roi_mask)
-        loss_ori_coherence = self.coherence_loss_fn(pred_dirmap, roi_mask)
-        
-        # Soma ponderada dos componentes da loss de orientação
-        ori_loss = (self.hparams.w_ori * loss_ori_weighted) + \
-                   (self.hparams.w_coh * loss_ori_coherence)
-        
-        # 2. Loss de Enhancement (Inalterada)
-        enh_loss = (0.5 * self.mse_criterion(pred_orig, true_orig) + \
-                    0.5 * self.bce_criterion(pred_bin, true_bin))
-        
-        # 3. Loss Total (Inalterada)
+        # true_dirmap = F.interpolate(y_dirmap, size=true_bin.shape[1:], mode="bilinear", align_corners=False)
+        true_dirmap_idx = y_dirmap.argmax(dim=1)
+        ori_loss = circular_cross_entropy(pred_dirmap, true_dirmap_idx, sigma=1.5)
+        enh_loss = (0.5 * self.mse_criterion(pred_orig, true_orig) + 0.5 * self.bce_criterion(pred_bin, true_bin))
         total_loss = ori_loss + enh_loss
-        
         return {"ori_loss": ori_loss, "enh_loss": enh_loss, "total_loss": total_loss}
     
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> None: 
+    ) -> None: # ⚠️ Note que agora não retorna mais a loss
+        # Acessa os otimizadores
         opt_dirmap, opt_enh = self.optimizers()
 
+        # Calcula as losses
         losses = self.model_step(batch)
         ori_loss = losses["ori_loss"]
         enh_loss = losses["enh_loss"]
@@ -254,20 +300,29 @@ class EnhancerLitModule(LightningModule):
 
         # Fase 1: Aquecimento (otimiza apenas dirmap)
         if self.current_epoch < self.hparams.warmup_epochs_dirmap:
+            # Zera os gradientes do otimizador específico
             opt_dirmap.zero_grad()
+            # Faz o backpropagation (o Lightning cuida de escalar a loss para precisão mista, etc.)
             self.manual_backward(ori_loss)
+            # Atualiza os pesos
             opt_dirmap.step()
+
+            # Loga a métrica
             self.train_ori_loss(ori_loss)
             self.log("train/ori_loss", self.train_ori_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
         # Fase 2: Treinamento conjunto (otimiza ambos)
         else:
+            # Zera os gradientes de AMBOS os otimizadores
             opt_dirmap.zero_grad()
             opt_enh.zero_grad()
+            # O backpropagation na loss total calcula gradientes para toda a rede
             self.manual_backward(total_loss)
+            # Atualiza os pesos de AMBAS as sub-redes
             opt_dirmap.step()
             opt_enh.step()
 
+            # Loga as métricas
             self.train_loss(total_loss)
             self.train_ori_loss(ori_loss)
             self.train_enh_loss(enh_loss)
